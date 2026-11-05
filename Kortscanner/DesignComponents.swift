@@ -15,7 +15,20 @@ struct BigButtonStyle: ButtonStyle {
 }
 struct GlassPanel: ViewModifier {
     func body(content: Content) -> some View {
-        content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24))
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24))
+        } else {
+            legacyPanel(content)
+        }
+        #else
+        legacyPanel(content)
+        #endif
+    }
+    private func legacyPanel(_ content: Content) -> some View {
+        content.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24))
+            .overlay { RoundedRectangle(cornerRadius: 24).stroke(.primary.opacity(0.12), lineWidth: 1) }
+            .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
     }
 }
 extension View { func glassPanel() -> some View { modifier(GlassPanel()) } }

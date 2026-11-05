@@ -1,7 +1,9 @@
 import Foundation
 import UIKit
 import Vision
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 import CoreImage
 import ImageIO
 
@@ -16,6 +18,8 @@ struct CardInfo: Sendable {
     var certNumber = ""
 }
 
+#if canImport(FoundationModels)
+@available(iOS 26.0, *)
 @Generable
 struct RecognizedCard {
     @Guide(description: "The exact printed card name, or empty string if absent. Do not invent.")
@@ -35,6 +39,8 @@ struct RecognizedCard {
     @Guide(description: "Certification number clearly identified on the grading label, or empty string.")
     var certNumber: String
 }
+
+#endif
 
 enum CardRecognizer {
     static func fallbackParse(_ lines: [String]) -> CardInfo {
@@ -137,6 +143,22 @@ enum CardRecognizer {
             DebugLog.shared.info("OCR afsluttet: \(lines.count) tekstlinjer")
             var result = fallbackParse(lines)
             guard !lines.isEmpty else { return result }
+            #if canImport(FoundationModels)
+            if #available(iOS 26.0, *) {
+                result = await refineWithIntelligence(lines, fallback: result)
+            }
+            #endif
+            return result
+        } catch {
+            DebugLog.shared.error("OCR fejlede: \(String(describing: type(of: error)))")
+            return CardInfo()
+        }
+    }
+    #if canImport(FoundationModels)
+    @available(iOS 26.0, *)
+    @MainActor
+    private static func refineWithIntelligence(_ lines: [String], fallback: CardInfo) async -> CardInfo {
+        var result = fallback
             guard case .available = SystemLanguageModel.default.availability else {
                 DebugLog.shared.info("Apple Intelligence er ikke klar; bruger tekstgenkendelse")
                 return result
@@ -177,12 +199,10 @@ enum CardRecognizer {
             } catch {
                 DebugLog.shared.error("Apple Intelligence kunne ikke fuldføre; bruger OCR. \(String(describing: type(of: error)))")
             }
-            return result
-        } catch {
-            DebugLog.shared.error("OCR fejlede: \(String(describing: type(of: error)))")
-            return CardInfo()
-        }
+        return result
     }
+    #endif
+
 }
 
 enum ScanError: LocalizedError {

@@ -69,7 +69,10 @@ jobs:
           plutil -p build/ipa/Payload/Kortscanner.app/Info.plist | tee build/logs/Info-plist.log
           /usr/libexec/PlistBuddy -c 'Print NSCameraUsageDescription' build/ipa/Payload/Kortscanner.app/Info.plist
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' build/ipa/Payload/Kortscanner.app/Info.plist)" = "dk.iamfaded90.kortscanner"
-          test "$(/usr/libexec/PlistBuddy -c 'Print MinimumOSVersion' build/ipa/Payload/Kortscanner.app/Info.plist)" = "26.0"
+          test "$(/usr/libexec/PlistBuddy -c 'Print MinimumOSVersion' build/ipa/Payload/Kortscanner.app/Info.plist)" = "18.1"
+          test "$(/usr/libexec/PlistBuddy -c 'Print MinimumOSVersion' build/ipa/Payload/Kortscanner.app/PlugIns/KortscannerWidgets.appex/Info.plist)" = "18.1"
+          otool -l build/ipa/Payload/Kortscanner.app/Kortscanner > build/logs/load-commands.log
+          python3 -c 'import pathlib; s=pathlib.Path("build/logs/load-commands.log").read_text(); blocks=s.split("Load command"); fm=[b for b in blocks if "/FoundationModels.framework/" in b]; assert fm and all("LC_LOAD_WEAK_DYLIB" in b for b in fm), "FoundationModels must be weak-linked for iOS 18"; print("FoundationModels: weak-link bekræftet")'
           cd build/ipa
           zip -qry ../Kortscanner-unsigned.ipa Payload
       - name: Gem IPA
@@ -102,4 +105,47 @@ jobs:
           path: |
             build/logs
             build/*.xcresult
+          retention-days: 1
+
+  compatibility-ios18:
+    name: Test alternativer på iOS 18
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.4'
+      - run: brew install xcodegen
+      - name: Byg og test med iOS 18 SDK og simulator
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs build/Screenshots
+          xcodegen generate
+          xcodebuild -version | tee build/logs/xcode-version.log
+          xcrun simctl list devices available -j > build/devices.json
+          DEVICE=$(python3 -c 'import json; d=json.load(open("build/devices.json")); xs=[x for k,v in d["devices"].items() if "iOS-18-5" in k for x in v if x["name"].startswith("iPhone")]; print(next((x["udid"] for x in xs if x["name"]=="iPhone 16 Pro Max"), xs[0]["udid"]))')
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcodebuild test -scheme Kortscanner -derivedDataPath build/SimulatorData -parallel-testing-enabled NO -destination "platform=iOS Simulator,id=$DEVICE" -resultBundlePath build/Tests.xcresult CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/logs/ios18-tests.log
+          xcrun simctl install "$DEVICE" build/SimulatorData/Build/Products/Debug-iphonesimulator/Kortscanner.app
+          for MODE in dark light; do
+            xcrun simctl ui "$DEVICE" appearance "$MODE"
+            for TAB in 1 2; do
+              THEME="Mørk"
+              if [ "$MODE" = "light" ]; then THEME="Lys"; fi
+              xcrun simctl launch --terminate-running-process "$DEVICE" dk.iamfaded90.kortscanner -hasSeenOnboarding YES -screenshotTab "$TAB" -appearance "$THEME" -AppleLanguages '(da)' -AppleLocale da_DK
+              sleep 3
+              xcrun simctl io "$DEVICE" screenshot "build/Screenshots/ios18-$MODE-$TAB.png"
+            done
+          done
+      - name: Gem iOS 18-test og layout
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kortscanner-iOS18-test
+          path: |
+            build/logs
+            build/Tests.xcresult
+            build/Screenshots
           retention-days: 1

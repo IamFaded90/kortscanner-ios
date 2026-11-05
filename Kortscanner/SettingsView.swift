@@ -1,6 +1,8 @@
 import SwiftUI
 import SwiftData
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 import AVFoundation
 import UniformTypeIdentifiers
 
@@ -223,13 +225,24 @@ struct SettingsView: View {
         }.navigationTitle("Data og fortryd")
     }
     @ViewBuilder private var feedback: some View { if !message.isEmpty { Section { Text(message) } } }
-    private var aiAvailable: Bool { if case .available = SystemLanguageModel.default.availability { return true }; return false }
+    private var aiAvailable: Bool {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *), case .available = SystemLanguageModel.default.availability { return true }
+        #endif
+        return false
+    }
+    private var aiExplanation: String {
+        if #available(iOS 26.0, *) {
+            return aiAvailable ? "Modellen er klar på din iPhone." : "Apple Intelligence er ikke klar. OCR, skabeloner og beregnede samlingssvar virker stadig."
+        }
+        return "iOS 18: bruger OCR og regler, salgsudkast fra skabeloner og svar fra dine gemte tal. Appens AI-model kræver iOS 26."
+    }
     private func runTests() async {
         testing = true
         let camera = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
         tests = ["Kamera": camera, "Apple Intelligence": aiAvailable, "Ekstern backup": backup.externalFolderChosen]
         explanations = ["Kamera": camera ? "Kameraadgang er slået til." : "Giv Kortscanner kameraadgang i iPhone-indstillingerne.",
-                        "Apple Intelligence": aiAvailable ? "Modellen er klar på din iPhone." : "Slå Apple Intelligence til, og vent på modeldownload. OCR virker stadig.",
+                        "Apple Intelligence": aiExplanation,
                         "Ekstern backup": backup.externalFolderChosen ? "En mappe er valgt. Test også med Tag backup nu." : "Vælg en ekstern mappe i Backup for at beskytte mod afinstallation."]
         do {
             _ = try await CardAPI.search(CardInfo(name: "Pikachu", number: "25"))

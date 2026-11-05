@@ -1,5 +1,5 @@
 # Kortscanner
-Dansk iPhone-app til Pokémon-kort. iOS 26. Bygges på GitHub uden Mac.
+Dansk iPhone-app til Pokémon-kort. iOS 18.1 eller nyere (inklusive iOS 18.1.1). Bygges på GitHub uden Mac.
 
 ## Første fase
 Kamera med automatisk kantgenkendelse, skarphed og stabilitet, perspektivkorrektion, forside/bagside/nærbillede, import fra Fotos, OCR og Apple Intelligence med regelbaseret fallback, lokal samling og delbar fejllog.
@@ -105,3 +105,12 @@ Fase 4: scan tre kort i batch, kontrollér dem i Samling, redigér pris og se hi
 GitHub-simulatoren tester parser, beskyttede kort, identitet for eksemplarer, prisregistrering og backup-rundtur. Kamera, sensorer, Apple Intelligence og OAuth skal desuden testes på en fysisk telefon. At et IPA-build er grønt dokumenterer kompilering og tests, ikke en fuld fysisk enhedstest.
 
 Buildet forsøger også at tage simulatorbilleder af Samling og Indstillinger i lyst og mørkt tema. De er kun tomme testvisninger og indeholder ingen personlige samlingsdata. Artifacts udløber efter én dag. Backup- og prisgrafdata skabes af faktiske lokale gemninger; der indsættes ingen fiktiv samling.
+
+## iOS 18.1.1 og nyere
+- Samme app og lokale samling virker fra iOS 18.1. Installer IPA med Sideloadly som beskrevet ovenfor.
+- På iOS 18 bruges Vision OCR og regler til kortgenkendelse. Du kan rette oplysninger og vælge et af de foreslåede kort.
+- Salgsudkast laves med danske/engelske skabeloner, og samlingschatten besvarer de foreslåede spørgsmål med beregnede gemte tal. Andre spørgsmål viser en faktuel oversigt.
+- På iOS 26 bruges Foundation Models automatisk, når modellen er tilgængelig. Appens modeladgang findes ikke på iOS 18, selv hvis telefonen har Apple Intelligence.
+- Glaspaneler bruger materialebaggrunde på iOS 18 og Liquid Glass på iOS 26. Siri, Handlingsknappen, Kontrolcenter og Live Activity bevares. Der er ingen hjemmeskærmswidget.
+- Backup, billeder, priser, salg, Google Fotos og offlinefunktioner bevares. Google kræver fortsat dit eget klient-id og login.
+- Test på telefonen: scan forside/bagside, gem og genåbn et kort, prøv samlingsspørgsmål og et salgsudkast, og start batch for at se Live Activity. Prøv også Scan et kort fra Genveje/Kontrolcenter.

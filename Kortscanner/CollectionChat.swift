@@ -1,6 +1,8 @@
 import SwiftUI
 import SwiftData
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 
 struct ChatLine: Identifiable {
     var id = UUID()
@@ -30,7 +32,7 @@ struct CollectionChat: View {
                             Text(line.text).textSelection(.enabled).padding(16).frame(maxWidth: .infinity, alignment: line.user ? .trailing : .leading)
                                 .background(line.user ? Theme.blue.opacity(0.15) : Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 20))
                         }
-                        if busy { ProgressView("Apple Intelligence tænker …") }
+                        if busy { ProgressView("Finder svar i din samling …") }
                     }.padding(20)
                 }
                 HStack {
@@ -55,7 +57,7 @@ struct CollectionChat: View {
 
 @MainActor
 enum CollectionAssistant {
-    static func answer(_ question: String, cards: [CardItem]) async -> String {
+    static func answer(_ question: String, cards: [CardItem], useIntelligence: Bool = true) async -> String {
         let inventory = cards.filter { $0.status != "Solgt" }
         let most = inventory.filter { $0.priceDKK != nil }.max { ($0.priceDKK ?? 0) < ($1.priceDKK ?? 0) }
         let gain = inventory.compactMap { card -> (CardItem, Double)? in
@@ -80,7 +82,8 @@ enum CollectionAssistant {
         else if lower.contains("sælg") || lower.contains("salg") {
             fallback = sale.isEmpty ? "Du har ingen ubeskyttede kort markeret Til salg. Åbn et kort, og skift status, hvis du vil sælge det." : "Du har markeret disse kort Til salg: " + sale.prefix(30).map(\.name).joined(separator: ", ") + "."
         } else { fallback = summary }
-        guard case .available = SystemLanguageModel.default.availability else { return fallback }
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *), useIntelligence, case .available = SystemLanguageModel.default.availability {
         do {
             let rows = cards.prefix(150).map { card in
                 ["navn": card.name, "nummer": card.number, "sæt": card.setName,
@@ -93,5 +96,8 @@ enum CollectionAssistant {
             DebugLog.shared.info("Apple Intelligence: samlingssvar genereret")
             return response.content + "\n\nBeregnet fra dine gemte data:\n" + fallback
         } catch { DebugLog.shared.info("Samlingschat bruger beregnede fakta; AI er ikke klar"); return fallback }
+        }
+        #endif
+        return fallback
     }
 }
