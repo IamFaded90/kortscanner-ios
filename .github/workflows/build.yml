@@ -60,7 +60,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
       - name: Pak Xcode-projekt og kildekode
-        run: zip -qry build/Kortscanner-kildekode.zip Kortscanner Tests scripts project.yml Kortscanner.xcodeproj .github README.md -x '*/.DS_Store'
+        run: zip -qry build/Kortscanner-kildekode.zip Kortscanner KortscannerWidgets Shared Tests scripts project.yml Kortscanner.xcodeproj .github README.md -x '*/.DS_Store'
       - name: Gem projekt
         uses: actions/upload-artifact@v4
         with:

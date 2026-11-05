@@ -15,7 +15,10 @@ targets:
   Kortscanner:
     type: application
     platform: iOS
-    sources: [Kortscanner]
+    sources: [Kortscanner, Shared]
+    dependencies:
+      - target: KortscannerWidgets
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dk.iamfaded90.kortscanner
@@ -29,10 +32,29 @@ targets:
         NSPhotoLibraryAddUsageDescription: Appen gemmer dine kortbilleder i Fotos.
         NSCameraUsageDescription: Kameraet bruges til at scanne forsiden og bagsiden af dine kort.
         UILaunchScreen: {}
+        NSSupportsLiveActivities: true
+        NSMotionUsageDescription: Bevægelsessensoren giver kortbilledet en diskret holo-effekt.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         LSApplicationCategoryType: public.app-category.utilities
         CFBundleURLTypes:
           - CFBundleURLSchemes: ["kortscanner"]
+  KortscannerWidgets:
+    type: app-extension
+    platform: iOS
+    sources: [KortscannerWidgets, Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dk.iamfaded90.kortscanner.widgets
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+    info:
+      path: Generated/Widget-Info.plist
+      properties:
+        CFBundleDisplayName: Kortscanner
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
   KortscannerTests:
     type: bundle.unit-test
     platform: iOS

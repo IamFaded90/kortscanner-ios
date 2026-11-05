@@ -62,6 +62,12 @@ final class DebugLog: ObservableObject {
         return url
     }
 
+    func restore(_ previous: [String]) {
+        lines = Array(previous.suffix(1000))
+        do { try lines.joined(separator: "\n").appending("\n").write(to: fileURL, atomically: true, encoding: .utf8) }
+        catch { logger.error("Loggen kunne ikke gendannes.") }
+    }
+
     func clear() {
         do {
             try Data().write(to: fileURL, options: .atomic)

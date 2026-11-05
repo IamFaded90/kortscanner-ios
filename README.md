@@ -60,3 +60,41 @@ Test: efter opsætning upload ét kort, log ud og ind på en anden konto, og upl
 
 ## Privatliv ved offentligt build
 Repoet indeholder kun genereret kildekode og tests. Ingen IPA, kortbilleder, backups, samlingsdata, API-nøgler, OAuth-klient-id'er eller tokens må committes. Builds indeholder ingen personlige loginoplysninger. IPA og øvrige artifacts slettes automatisk efter én dag. Samlingen er lokal. Google kræver dit eget OAuth-projekt og din egen konto; opret den som testbruger i Google Cloud. Offentlig kildekode kan også bygges af andre, men giver dem ingen adgang til dine data. En offentlig usigneret IPA er ikke en personlig adgangslås; din telefon og OAuth-tilladelser beskytter dine data.
+
+## Fase 4 og tilføjelser
+- Kameraet er første fane. Automatisk optagelse bruger Vision-rektangler, bevægelsesstabilitet og BGRA-skarphed. Manuel udløser og Fotos-import er tilgængelige.
+- Batch gemmer hvert eksemplars billeder i SwiftData med det samme og genkender tekst bagefter. Forside/bagside kan scannes uden mellemtryk. Batch-kort er markeret til manuel kontrol, før Google-upload og sikker matchpris.
+- Hvert eksemplar har egne billeder, stand, status og pris. Samme identitet grupperes med x2/x3. Listevisningen kan foldes ud; gitteret åbner eksemplarer.
+- DKK-prishistorik gemmes ved opdatering. Graf pr. eksemplar samt samlingsgraf fra registrerede værdier. Ændring siden i går omfatter også nye/solgte/slettede eksemplarer; det er ikke et beregnet investeringsafkast.
+- Stand-tjek viser beskårne hjørner og kanter fra begge sider med zoom. Ingen AI-stand eller karakter. Du vælger NM/LP/MP mv.
+- Noten om PSA er kun en regel ved din valgte raw-værditærskel; den beregner ikke gradering, gevinst eller forventet karakter.
+- Samlingschat bruger Apple Intelligence og beregnede fakta, med lokal fallback. Salgsforslag udelukker beskyttede PSA-kort. Alle AI-tekster skal kontrolleres.
+- Siri/Genveje: Scan et kort og Hvad er min samling værd? Live Activity kan vise batch-status uden push.
+- Mørk blå baggrund som standard, gul accent, blå sekundærfarve, grøn/orange/grå status, glas-paneler, stor tekst og støtte for Reducer bevægelse. Holo-effekten er visuel og siger intet om kortets faktiske variant.
+
+### Automatisk backup og gendannelse
+1. Åbn **Indstillinger → Backup → Vælg backupmappe i Filer**.
+2. Vælg en mappe uden for Kortscanner, fx iCloud Drive eller et tilsluttet drev. Det er normal Filer-adgang og kræver ingen iCloud-container i appen.
+3. Tryk **Tag backup nu**, og kontrollér i Filer at **Kortscanner-seneste.json** findes. Filen indeholder billeder som base64 samt alle eksemplarer og historik, men ingen nøgler eller login.
+4. Appen gemmer automatisk efter lokale samlingsændringer og ved baggrundsskift. Den beholder også dagens første kopi som **Kortscanner-ÅÅÅÅ-MM-DD.json**. Gamle dagskopier slettes ikke automatisk.
+5. Hvis appen geninstalleres: vælg **Gendan fra JSON-backup**, vælg filen, og bekræft. Samme id opdateres; ekstra eksemplarer bevares. Du kan fortryde gendannelsen.
+6. Vælg backupmappen igen efter geninstallation, og indtast dine nøgler/log ind igen. Loginoplysninger er ikke i backup.
+7. Hvis ingen ekstern mappe er valgt, laves kun en lokal kopi i appens Dokumenter, synlig under På min iPhone/Kortscanner. Denne kopi overlever **ikke** sletning af appen. En 7-dages fornyelse i Sideloadly kræver normalt ikke afinstallation.
+8. Gendannelse accepterer backupversion 1, højst 10.000 poster og en JSON-fil under 500 MB. Store billedsamlinger skal derfor sikkerhedskopieres og kontrolleres løbende.
+
+### Offline
+Kamera, OCR, lokal samling, chat-fallback og manuel pris virker uden net. Apple Intelligence virker lokalt, når modellen allerede er hentet og tilgængelig. Genkendte API-kort med en ventende pris genforsøges, når appen er åben og nettet vender tilbage. Ukendte eller tvetydige kort kræver dit matchvalg; de får aldrig automatisk en gættet pris. Google-upload ligger i en vedvarende kø og fortsætter i appen; der bruges ingen baggrundspush.
+
+### Widget og gratis Apple-ID
+Widget-extensionen kræver ingen App Groups. Den normale hjemmeskærmswidget er derfor et **manuelt øjebliksbillede**, hvor du selv indtaster samlet værdi og seneste kort under Redigér widget. Den kan ikke automatisk læse appens private SwiftData-lager. Live Activity får derimod aktuelle batch-data direkte fra appen, uden delt lager. Hvis Sideloadly eller gratis signering afviser extensions på din installation, kan du stadig bruge hovedappen; deaktivér extensionen ved signering. Det skal verificeres på din telefon.
+
+### Fortryd og sletning
+Lokale ændringer (nye kort, pris, stand, status, sletning, samlingsrydning og gendannelse) har fortryd/gentag i den aktuelle session, op til ti handlinger. Sletning kræver bekræftelse. Sletning af et eksemplar er lokal og kan fortrydes. Foto-upload kan ikke trækkes tilbage af en appendonly-app; billeder i Fotos og Google Fotos slettes kun manuelt af dig. Afviste eller usikre data bliver ikke automatisk solgt.
+
+### Sluttest på din iPhone
+Fase 1: test kameraramme, auto-optagelse, japansk OCR, slab-etiket, afvis/tillad kamera og offline scanning.
+Fase 2: vælg match og holo-variant, kontrollér DKK-kurs/prisdato, gem forskellige eksemplarer og test PSA-låsen.
+Fase 3: konfigurer Google, test lokalt album, Google-album, billedrækkefølge, upload efter netafbrydelse og salgsudkast uden publicering.
+Fase 4: scan tre kort i batch, kontrollér dem i Samling, redigér pris og se historik, test stand-zoom, gendan en backup, fortryd sletning, prøv Siri/chat/Live Activity og widget. Test også stor tekst, lyst tema og Reducer bevægelse.
+
+GitHub-simulatoren tester parser, beskyttede kort, identitet for eksemplarer, prisregistrering og backup-rundtur. Kamera, sensorer, Apple Intelligence og OAuth skal desuden testes på en fysisk telefon. At et IPA-build er grønt dokumenterer kompilering og tests, ikke en fuld fysisk enhedstest.

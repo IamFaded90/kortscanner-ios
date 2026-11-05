@@ -42,7 +42,7 @@ final class UploadQueue: ObservableObject {
                         DebugLog.shared.error("Lokalt fotoalbum: gemning fejlede")
                     }
                 }
-                guard google.signedIn, autoGoogle,
+                guard !card.needsReview, google.signedIn, autoGoogle,
                       force || card.nextUploadAt == nil || card.nextUploadAt! <= Date() else { continue }
                 if card.googleAccount != google.accountID {
                     card.googleAccount = google.accountID

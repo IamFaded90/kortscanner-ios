@@ -22,8 +22,10 @@ struct KortscannerApp: App {
 }
 
 enum Theme {
-    static let accent = Color(red: 0.72, green: 0.95, blue: 0.40)
-    static let bg = Color(red: 0.055, green: 0.075, blue: 0.075)
+    static let accent = Color(red: 1, green: 203.0 / 255, blue: 5.0 / 255)
+    static let blue = Color(red: 61.0 / 255, green: 125.0 / 255, blue: 202.0 / 255)
+    static let bg = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.025, green: 0.045, blue: 0.09, alpha: 1) : UIColor(red: 0.95, green: 0.97, blue: 1, alpha: 1) })
+    static func status(_ value: String) -> Color { value == "Beholder" ? .green : value == "Til salg" ? .orange : .gray }
 }
 
 @Model
@@ -48,6 +50,9 @@ final class CardItem {
     var apiID: String = ""
     var variant: String = ""
     var sequence: Int = 0
+    var needsReview: Bool = false
+    var priceRefreshPending: Bool = false
+    @Attribute(.externalStorage) var historyData: Data = Data()
     var deletedAt: Date?
     var photoSaved: Bool = false
     var uploadError: String = ""

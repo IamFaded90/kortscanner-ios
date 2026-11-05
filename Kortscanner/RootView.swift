@@ -4,21 +4,59 @@ import PhotosUI
 
 struct RootView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var router = AppRouter.shared
+    @ObservedObject private var history = ActionHistory.shared
     @AppStorage("hasSeenOnboarding") private var seen = false
+    @AppStorage("appearance") private var appearance = "Mørk"
     var body: some View {
-        TabView {
-            Tab("Scan", systemImage: "viewfinder") { ScanView() }
-            Tab("Samling", systemImage: "rectangle.stack") { CollectionView() }
-            Tab("Indstillinger", systemImage: "gearshape") { SettingsView() }
+        Group {
+            if !seen { OnboardingView { seen = true } }
+            else {
+                TabView(selection: $router.tab) {
+                    Tab("Scan", systemImage: "viewfinder", value: 0) { ScanView() }
+                    Tab("Samling", systemImage: "rectangle.stack", value: 1) { CollectionView() }
+                    Tab("Indstillinger", systemImage: "gearshape", value: 2) { SettingsView() }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    HStack(spacing: 12) {
+                        if !history.undoTitle.isEmpty {
+                            Menu {
+                                Button("Fortryd \(history.undoTitle)") { history.undo() }
+                                if !history.redoTitle.isEmpty { Button("Gentag \(history.redoTitle)") { history.redo() } }
+                            } label: { Label("Fortryd", systemImage: "arrow.uturn.backward").font(.subheadline.bold()).padding(14).frame(minHeight: 56).glassPanel() }
+                        } else if !history.redoTitle.isEmpty {
+                            Button("Gentag") { history.redo() }.padding(14).frame(minHeight: 56).glassPanel()
+                        }
+                        Button { router.showChat = true } label: { Label("Spørg", systemImage: "bubble.left.and.text.bubble.right").font(.subheadline.bold()).padding(14).frame(minHeight: 56).glassPanel() }
+                    }.padding(.horizontal, 20).padding(.bottom, 83)
+                }
+            }
         }
+        .preferredColorScheme(appearance == "System" ? nil : appearance == "Lys" ? .light : .dark)
+        .tint(Theme.blue)
+        .transaction { if reduceMotion { $0.disablesAnimations = true } }
+        .sheet(isPresented: $router.showChat) { CollectionChat() }
+        .onOpenURL { url in if url.scheme == "kortscanner" { router.tab = url.host == "scan" ? 0 : 1 } }
         .task {
             UploadQueue.shared.bind(context)
+            BatchSession.shared.bind(context)
             await GooglePhotosService.shared.restore()
+            do { try CollectionMaintenance.commit(context) } catch { DebugLog.shared.error("Samling kunne ikke klargøres") }
             await UploadQueue.shared.process()
+            await PriceRefreshService.shared.refresh(context)
         }
-        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in Task { await UploadQueue.shared.process() } }
-        .sheet(isPresented: Binding(get: { !seen }, set: { if !$0 { seen = true } })) {
-            OnboardingView { seen = true }.interactiveDismissDisabled()
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in Task {
+            await UploadQueue.shared.process()
+            await PriceRefreshService.shared.refresh(context)
+        }}
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await PriceRefreshService.shared.refresh(context); await UploadQueue.shared.process() } }
+            else {
+                do { try BackupManager.shared.write(context) }
+                catch { DebugLog.shared.error("Backup ved baggrundsskift fejlede") }
+            }
         }
     }
 }
@@ -45,41 +83,18 @@ struct OnboardingView: View {
 }
 
 struct ScanView: View {
-    @State private var showCamera = false
-    @State private var photos: [PhotosPickerItem] = []
+    @State private var batch = false
     @State private var busy = false
     @State private var info = CardInfo()
     @State private var images: [Data] = []
     @State private var review = false
-    @State private var message = ""
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    Image(systemName: "viewfinder").font(.system(size: 80, weight: .light)).foregroundStyle(Theme.accent).padding(.top, 36)
-                    Text("Ét kort ad gangen").font(.largeTitle.bold())
-                    Text("Scan forsiden, vend kortet, og scan bagsiden.").font(.title3).multilineTextAlignment(.center).foregroundStyle(.secondary)
-                    Button { showCamera = true } label: { Label("Scan et kort", systemImage: "camera.fill").frame(maxWidth: .infinity).padding(12) }
-                        .buttonStyle(.borderedProminent).controlSize(.large).disabled(busy)
-                    PhotosPicker(selection: $photos, maxSelectionCount: 3, matching: .images) {
-                        Label("Importér fra Fotos", systemImage: "photo.on.rectangle").frame(maxWidth: .infinity).padding(12)
-                    }.buttonStyle(.bordered).disabled(busy)
-                    Text("Ved import: vælg forside, bagside og evt. kortnummer i den rækkefølge.").font(.footnote).foregroundStyle(.secondary)
-                    if busy { ProgressView("Apple Intelligence læser kortet …") }
-                    if !message.isEmpty { Text(message).foregroundStyle(.secondary) }
-                }.padding(24)
-            }.navigationTitle("Kortscanner")
-                .fullScreenCover(isPresented: $showCamera) { CaptureView { pages in Task { await process(pages) } } }
-                .onChange(of: photos) { _, selection in Task {
-                    var pages: [Data] = []
-                    for photo in selection {
-                        if let data = try? await photo.loadTransferable(type: Data.self), let normalized = Self.normalize(data) { pages.append(normalized) }
-                    }
-                    if pages.count != selection.count { message = "Et billede kunne ikke læses. Prøv igen." }
-                    await process(pages)
-                    photos = []
-                }}
-                .sheet(isPresented: $review) { CardReviewView(images: images, initial: info) { message = "Kortet er gemt i din samling." } }
+        CaptureView(batch: $batch, paused: !batch && (busy || review)) { pages, isBatch in
+            if isBatch { BatchSession.shared.capture(pages) }
+            else { Task { await process(pages) } }
+        }
+        .sheet(isPresented: $review) {
+            CardReviewView(images: images, initial: info) {}.presentationDetents([.large]).presentationDragIndicator(.visible)
         }
     }
     private func process(_ pages: [Data]) async {
@@ -109,6 +124,7 @@ struct ScanView: View {
 struct CardReviewView: View {
     let images: [Data]
     let saved: () -> Void
+    let existing: CardItem?
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @State private var info: CardInfo
@@ -123,10 +139,14 @@ struct CardReviewView: View {
     @State private var confidence = "Lav"
     @State private var busy = false
     @State private var message = ""
-    init(images: [Data], initial: CardInfo, saved: @escaping () -> Void) {
+    init(images: [Data], initial: CardInfo, existing: CardItem? = nil, saved: @escaping () -> Void) {
         self.images = images
         self.saved = saved
+        self.existing = existing
         _info = State(initialValue: initial)
+        _setName = State(initialValue: existing?.setName ?? "")
+        _variant = State(initialValue: existing?.variant ?? "normal")
+        _priceText = State(initialValue: existing?.priceDKK.map { String(format: "%.2f", $0).replacingOccurrences(of: ".", with: ",") } ?? "")
     }
     var body: some View {
         NavigationStack {
@@ -249,20 +269,36 @@ struct CardReviewView: View {
         let text = priceText.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
         let amount = Double(text)
         guard text.isEmpty || (amount != nil && amount!.isFinite && amount! >= 0) else { message = "Skriv en gyldig pris i DKK."; return }
-        let card = CardItem(front: front, back: images.count > 1 ? images[1] : nil, info: info)
+        let before = existing.map(BackupCard.init)
+        let card = existing ?? CardItem(front: front, back: images.count > 1 ? images[1] : nil, info: info)
+        card.name = info.name; card.number = info.number; card.language = info.language
+        card.setCode = info.setCode; card.rarity = info.rarity
+        card.gradingCompany = info.gradingCompany; card.grade = info.grade; card.certNumber = info.certNumber
+        card.needsReview = false
         card.closeup = images.count > 2 ? images[2] : nil
         card.setName = setName
-        card.apiID = selected?.id ?? ""
+        card.apiID = selected?.id ?? existing?.apiID ?? ""
         card.variant = variant
         card.priceDKK = amount
         if let quote, let amount, abs(quote.dkk - amount) < 0.02 {
             card.priceSource = quote.source; card.priceDate = quote.sourceDate; card.exchangeDate = quote.rateDate
         } else if amount != nil { card.priceSource = "Manuel vurdering" }
-        card.sequence = UserDefaults.standard.integer(forKey: "lastCardSequence") + 1
-        context.insert(card)
+        if existing == nil {
+            card.sequence = UserDefaults.standard.integer(forKey: "lastCardSequence") + 1
+            context.insert(card)
+        }
+        card.priceRefreshPending = amount == nil && !card.apiID.isEmpty
         do {
-            try context.save()
-            UserDefaults.standard.set(card.sequence, forKey: "lastCardSequence")
+            if card.keepLocked { card.status = "Beholder" }
+            if let amount { try card.recordPrice(amount, source: card.priceSource, sourceDate: card.priceDate, rateDate: card.exchangeDate) }
+            try CollectionMaintenance.commit(context)
+            UserDefaults.standard.set(max(card.sequence, UserDefaults.standard.integer(forKey: "lastCardSequence")), forKey: "lastCardSequence")
+            let after = BackupCard(card)
+            if let before {
+                ActionHistory.shared.record("kortoplysninger", undo: { before.apply(to: card); CollectionMaintenance.saveAfterUndo(context) }, redo: { after.apply(to: card); CollectionMaintenance.saveAfterUndo(context) })
+            } else {
+                ActionHistory.shared.record("nyt kort", undo: { card.deletedAt = Date(); CollectionMaintenance.saveAfterUndo(context) }, redo: { card.deletedAt = nil; CollectionMaintenance.saveAfterUndo(context) })
+            }
             DebugLog.shared.info("Kort gemt lokalt")
             saved()
             Task { await UploadQueue.shared.process(force: true) }

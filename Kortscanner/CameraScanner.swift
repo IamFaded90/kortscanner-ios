@@ -3,16 +3,19 @@ import AVFoundation
 import Vision
 import CoreImage
 import Combine
+import PhotosUI
 
 final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     let session = AVCaptureSession()
     @Published var message = "Læg ét kort i rammen"
     @Published var denied = false
     @Published var available = true
+    @Published var detectionState = 0
     @Published var captured: Data?
     var autoCapture = true
     private let queue = DispatchQueue(label: "kortscanner.camera")
     private let ciContext = CIContext()
+    private var slabMode = false
     private var configured = false
     private var captureRequested = false
     private var stableFrames = 0
@@ -32,7 +35,7 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
     func stop() { queue.async { [weak self] in self?.session.stopRunning() } }
     func captureNow() { queue.async { [weak self] in self?.captureRequested = true } }
     func resume() {
-        DispatchQueue.main.async { self.captured = nil }
+        DispatchQueue.main.async { self.captured = nil; self.detectionState = 0 }
         queue.async { [weak self] in
             self?.stableFrames = 0
             self?.previousRect = nil
@@ -40,6 +43,7 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
             self?.cooldownUntil = CACurrentMediaTime() + 2
         }
     }
+    func setSlab(_ value: Bool) { queue.async { [weak self] in self?.slabMode = value } }
     func setAuto(_ value: Bool) { queue.async { [weak self] in self?.autoCapture = value } }
 
     private func configureAndStart() {
@@ -116,13 +120,13 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
     }
 
     private func publish(_ text: String) {
-        DispatchQueue.main.async { if self.message != text { self.message = text } }
+        DispatchQueue.main.async { if self.message != text { self.message = text }; self.detectionState = text.hasPrefix("Hold stille") ? 1 : 0 }
     }
 
     private func capture(buffer: CVPixelBuffer, rect: VNRectangleObservation?) {
         cooldownUntil = CACurrentMediaTime() + 3600
         var image = CIImage(cvPixelBuffer: buffer)
-        if let rect {
+        if let rect, !slabMode {
             let w = image.extent.width, h = image.extent.height
             let point: (CGPoint) -> CIVector = { CIVector(x: $0.x * w, y: $0.y * h) }
             image = image.applyingFilter("CIPerspectiveCorrection", parameters: [
@@ -138,6 +142,7 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
         }
         DispatchQueue.main.async {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            self.detectionState = 2
             self.captured = data
         }
     }
@@ -185,74 +190,122 @@ struct CameraPreview: UIViewRepresentable {
 }
 
 struct CaptureView: View {
-    let onFinished: ([Data]) -> Void
-    @Environment(\.dismiss) private var dismiss
+    @Binding var batch: Bool
+    let paused: Bool
+    let onFinished: ([Data], Bool) -> Void
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reducedMotion
     @StateObject private var camera = CameraEngine()
+    @ObservedObject private var session = BatchSession.shared
+    @AppStorage("scanSlabMode") private var slabMode = false
     @State private var pages: [Data] = []
-    @State private var preview: UIImage?
-    @State private var automatic = true
-
-    private var title: String { pages.isEmpty ? "Scan forsiden" : pages.count == 1 ? "Vend kortet — scan bagsiden" : "Nærbillede af kortnummer" }
+    @State private var photos: [PhotosPickerItem] = []
+    @State private var askCloseup = false
+    @State private var askRemove = false
+    private var title: String { pages.isEmpty ? "Forside" : pages.count == 1 ? "Bagside" : "Nærbillede (valgfrit)" }
+    private var frameColor: Color { camera.detectionState == 2 ? .green : camera.detectionState == 1 ? Theme.accent : .white }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            CameraPreview(session: camera.session).ignoresSafeArea()
-            VStack(spacing: 16) {
-                HStack {
-                    Button("Annuller") { dismiss() }
-                    Spacer()
-                    Toggle("Auto", isOn: $automatic).fixedSize().onChange(of: automatic) { _, value in camera.setAuto(value) }
-                }
-                Text(title).font(.title2.bold()).multilineTextAlignment(.center)
-                Spacer()
-                RoundedRectangle(cornerRadius: 20).stroke(Theme.accent, lineWidth: 3)
-                    .aspectRatio(0.716, contentMode: .fit).frame(maxWidth: 300)
-                    .overlay(alignment: .bottom) { Text(camera.message).font(.callout.bold()).padding(10).background(.ultraThinMaterial, in: Capsule()).offset(y: 50) }
-                Spacer()
-                if camera.denied {
-                    Text("Giv adgang til kameraet i Indstillinger.")
-                    Button("Åbn Indstillinger") {
-                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                    }.buttonStyle(.borderedProminent)
-                }
-                if !camera.available { Text("Kameraet er ikke tilgængeligt.") }
-                HStack(spacing: 24) {
-                    if !pages.isEmpty {
-                        Button(pages.count == 1 ? "Kun forside" : "Spring nærbillede over") { finish() }
+        GeometryReader { geometry in
+            ZStack {
+                Color.black.ignoresSafeArea()
+                CameraPreview(session: camera.session).ignoresSafeArea()
+                LinearGradient(colors: [.black.opacity(0.7), .clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom).ignoresSafeArea().allowsHitTesting(false)
+                VStack(spacing: 16) {
+                    Text(title).font(.largeTitle.bold()).multilineTextAlignment(.center).padding(.top, 14)
+                    Text(batch ? session.message : pages.isEmpty ? "Hold kortet stille i rammen" : pages.count == 1 ? "Vend kortet og hold det stille" : "Scan nummeret, eller gå videre")
+                        .font(.headline).multilineTextAlignment(.center).lineLimit(3)
+                    if slabMode { Text("Slab-tilstand · hele etiketten bevares").font(.caption) }
+                    Spacer(minLength: 8)
+                    RoundedRectangle(cornerRadius: 22)
+                        .stroke(frameColor, lineWidth: 3)
+                        .shadow(color: frameColor.opacity(0.35), radius: 14)
+                        .aspectRatio(0.716, contentMode: .fit)
+                        .frame(maxHeight: geometry.size.height * 0.48)
+                        .animation(reducedMotion ? nil : .spring(response: 0.35), value: camera.detectionState)
+                    Text(camera.message).font(.subheadline.bold()).padding(10).background(.ultraThinMaterial, in: Capsule())
+                    Spacer(minLength: 8)
+                    if camera.denied {
+                        Text("Giv kameraadgang i Indstillinger.").font(.headline)
+                        Button("Åbn Indstillinger") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                        }.frame(minHeight: 56)
                     }
-                    Button { camera.captureNow() } label: {
-                        Image(systemName: "camera.fill").font(.largeTitle).padding(20).background(.white, in: Circle()).foregroundStyle(.black)
-                    }.accessibilityLabel("Tag billede")
-                }
-            }.padding(24).foregroundStyle(.white)
-            if let preview {
-                Color.black.opacity(0.85).ignoresSafeArea()
-                VStack(spacing: 20) {
-                    Text("Er billedet skarpt?").font(.title2.bold())
-                    Image(uiImage: preview).resizable().scaledToFit().frame(maxHeight: 450)
-                    HStack {
-                        Button("Tag om") { self.preview = nil; camera.resume() }.buttonStyle(.bordered)
-                        Button("Brug billede") {
-                            if let data = camera.captured { pages.append(data) }
-                            self.preview = nil
-                            if pages.count >= 3 { finish() }
-                            else { camera.resume() }
-                        }.buttonStyle(.borderedProminent)
+                    if !pages.isEmpty && !batch {
+                        HStack {
+                            Button(pages.count == 1 ? "Kun forside" : "Gå videre") { finish() }.frame(minHeight: 56)
+                            Spacer()
+                            Button("Fortryd side") { askRemove = true }.frame(minHeight: 56)
+                        }
                     }
-                }.padding().foregroundStyle(.white)
+                    HStack(spacing: 18) {
+                        PhotosPicker(selection: $photos, maxSelectionCount: 3, matching: .images) {
+                            Label("Fotos", systemImage: "photo.on.rectangle").labelStyle(.verticalScan)
+                        }.frame(maxWidth: .infinity, minHeight: 56).disabled(paused)
+                        Button { camera.captureNow() } label: {
+                            VStack(spacing: 6) {
+                                Image(systemName: "camera.fill").font(.title).frame(width: 68, height: 68).background(Theme.accent, in: Circle()).foregroundStyle(.black)
+                                Text("Tag billede").font(.caption.bold())
+                            }
+                        }.disabled(paused || camera.denied)
+                        Button { batch.toggle() } label: {
+                            Label(batch ? "Batch til" : "Batch fra", systemImage: batch ? "square.stack.3d.up.fill" : "square.stack.3d.up").labelStyle(.verticalScan)
+                        }.frame(maxWidth: .infinity, minHeight: 56)
+                    }.padding(16).glassPanel()
+                }.padding(.horizontal, 20).padding(.bottom, 70).foregroundStyle(.white)
+                if paused { Color.black.opacity(0.6).ignoresSafeArea(); ProgressView("Læser kortet …").tint(Theme.accent).foregroundStyle(.white) }
             }
         }
-        .onAppear { camera.start() }
+        .onAppear { camera.setSlab(slabMode); if !paused { camera.start() } }
         .onDisappear { camera.stop() }
+        .onChange(of: slabMode) { _, value in camera.setSlab(value) }
+        .onChange(of: paused) { _, value in if value { camera.stop() } else { camera.resume(); camera.start() } }
         .onChange(of: camera.captured) { _, data in
-            if let data { preview = UIImage(data: data) }
+            guard let data, !paused else { return }
+            pages.append(data)
+            if batch {
+                if pages.count == 2 { let images = pages; pages = []; onFinished(images, true) }
+                camera.resume()
+            } else if pages.count == 2 { askCloseup = true }
+            else if pages.count >= 3 { finish() }
+            else { camera.resume() }
+            Task { await session.phase(title) }
         }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { camera.start() }
-            else { camera.stop() }
+        .onChange(of: batch) { _, value in Task { if value { await session.start() } else { await session.stop() } } }
+        .onChange(of: photos) { _, selection in Task {
+            guard !selection.isEmpty else { return }
+            var imported: [Data] = []
+            for photo in selection {
+                if let data = try? await photo.loadTransferable(type: Data.self), let normalized = ScanView.normalize(data) { imported.append(normalized) }
+            }
+            if !imported.isEmpty { onFinished(imported, batch) }
+            photos = []
+        }}
+        .onChange(of: scenePhase) { _, phase in if phase == .active && !paused { camera.start() } else { camera.stop() } }
+        .confirmationDialog("Vil du scanne kortnummeret tæt på?", isPresented: $askCloseup, titleVisibility: .visible) {
+            Button("Gå videre med kortet") { finish() }
+            Button("Scan nærbillede") { camera.resume() }
+        }
+        .confirmationDialog("Fjern den seneste scannede side?", isPresented: $askRemove, titleVisibility: .visible) {
+            Button("Fjern side", role: .destructive) {
+                let old = pages
+                _ = pages.popLast()
+                camera.resume()
+                ActionHistory.shared.record("scannet side", undo: { pages = old }, redo: { pages = Array(old.dropLast()) })
+            }
         }
     }
-    private func finish() { camera.stop(); onFinished(pages); dismiss() }
+    private func finish() {
+        guard !pages.isEmpty else { return }
+        let images = pages
+        pages = []
+        camera.stop()
+        onFinished(images, false)
+    }
 }
+struct VerticalScanLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(spacing: 7) { configuration.icon.font(.title2); configuration.title.font(.caption.bold()) }.multilineTextAlignment(.center)
+    }
+}
+extension LabelStyle where Self == VerticalScanLabelStyle { static var verticalScan: Self { Self() } }
