@@ -22,6 +22,7 @@ struct SettingsView: View {
     @State private var googleClient = Keychain.get("googleClientID")
     @State private var pokemonKey = Keychain.get("pokemonAPI")
     @State private var justKey = Keychain.get("justTCG")
+    @State private var trackerKey = Keychain.get("pokemonPriceTracker")
     @State private var export: URL?
     @State private var message = ""
     @State private var showClear = false
@@ -118,14 +119,18 @@ struct SettingsView: View {
             }
             Section("Priskilder · valgfrit") {
                 SecureField("Pokémon TCG API-nøgle", text: $pokemonKey).textInputAutocapitalization(.never).autocorrectionDisabled().frame(minHeight: 56)
-                SecureField("JustTCG API-nøgle", text: $justKey).textInputAutocapitalization(.never).autocorrectionDisabled().frame(minHeight: 56)
+                SecureField("JustTCG-nøgle", text: $justKey).textInputAutocapitalization(.never).autocorrectionDisabled().frame(minHeight: 56)
+                SecureField("PokemonPriceTracker-nøgle", text: $trackerKey).textInputAutocapitalization(.never).autocorrectionDisabled().frame(minHeight: 56)
                 Button("Gem API-nøgler i Keychain") {
                     do {
                         try Keychain.set(pokemonKey.trimmingCharacters(in: .whitespacesAndNewlines), key: "pokemonAPI")
                         try Keychain.set(justKey.trimmingCharacters(in: .whitespacesAndNewlines), key: "justTCG")
+                        try Keychain.set(trackerKey.trimmingCharacters(in: .whitespacesAndNewlines), key: "pokemonPriceTracker")
+                        Task { await PriceProviderRequests.shared.reset() }
                         message = "Nøglerne er gemt sikkert på telefonen."
                     } catch { message = "Nøglerne kunne ikke gemmes." }
                 }.frame(minHeight: 56)
+                Text("JustTCG og PokemonPriceTracker er valgfrie. Manglende nøgle, fejl eller forbrugsgrænse springes over. Alle viste priser omregnes til DKK.").font(.footnote)
                 Text("Pokémon TCG API er under udfasning. Scanning og samling virker også uden net og API-nøgler.").font(.footnote)
             }
             feedback

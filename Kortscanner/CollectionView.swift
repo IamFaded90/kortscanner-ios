@@ -357,10 +357,10 @@ struct CardDetailView: View {
                         edit("pris") { try card.recordPrice(amount, source: "Manuel vurdering") }
                         manualPrice = ""
                     }.frame(minHeight: 56)
-                    TextField("TCGplayer-produkt-id til JustTCG", text: $productID).keyboardType(.numberPad).textFieldStyle(.roundedBorder).frame(minHeight: 56)
-                    Button("Hent JustTCG NM-priser") { Task {
-                        do { extraQuotes = try await PriceService.justTCG(productID: productID) }
-                        catch { self.error = error.localizedDescription }
+                    TextField("TCGplayer-produkt-id · valgfrit", text: $productID).keyboardType(.numberPad).textFieldStyle(.roundedBorder).frame(minHeight: 56)
+                    Button("Hent alle priskilder") { Task {
+                        extraQuotes = await PriceService.savedQuotes(card, productID: productID)
+                        error = extraQuotes.isEmpty ? "Ingen kilde gav en sikker pris. Tjek kortdata og nøgler, eller prøv senere." : ""
                     }}.frame(minHeight: 56)
                     ForEach(Array(extraQuotes.enumerated()), id: \.offset) { _, quote in
                         Button { edit("pris") { try card.recordPrice(quote.dkk, source: quote.source, sourceDate: quote.sourceDate, rateDate: quote.rateDate) } } label: {

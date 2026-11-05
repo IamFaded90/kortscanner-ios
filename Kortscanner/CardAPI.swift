@@ -129,52 +129,74 @@ actor ExchangeRates {
     }
 }
 enum PriceService {
+    typealias Operation = @Sendable () async throws -> [PriceQuote]
+    static func collect(_ sources: [(String, Operation)]) async -> [PriceQuote] {
+        await withTaskGroup(of: (Int, [PriceQuote]).self) { group in
+            for (index, source) in sources.enumerated() {
+                group.addTask {
+                    do { return (index, try await source.1()) }
+                    catch {
+                        await MainActor.run { DebugLog.shared.info("\(source.0): pris sprunget over; bruger øvrige kilder") }
+                        return (index, [])
+                    }
+                }
+            }
+            var results: [(Int, [PriceQuote])] = []
+            for await result in group { results.append(result) }
+            return results.sorted { $0.0 < $1.0 }.flatMap(\.1)
+        }
+    }
     static func quotes(_ card: APICard, variant: String) async throws -> [PriceQuote] {
-        var quotes: [PriceQuote] = []
-        if let price = card.tcgplayer?.prices?[variant]?.market, price >= 0 {
-            let rate = try await ExchangeRates.shared.rate("USD")
-            quotes.append(PriceQuote(dkk: price * rate.rate, source: "TCGplayer · \(variant) · raw NM", sourceDate: card.tcgplayer?.updatedAt ?? "", rateDate: rate.date))
-        }
-        let isReverse = variant == "reverseHolofoil"
-        let isFirstEdition = variant.lowercased().contains("1stedition")
-        if !isFirstEdition, let market = card.cardmarket,
-           let price = isReverse ? market.prices?.reverseHoloTrend : market.prices?.trendPrice {
-            let rate = try await ExchangeRates.shared.rate("EUR")
-            quotes.append(PriceQuote(dkk: price * rate.rate, source: "Cardmarket · trend · ikke standsspecifik", sourceDate: market.updatedAt ?? "", rateDate: rate.date))
-        }
-        return quotes
+        let identity = PriceIdentity(name: card.name, number: card.number, setName: card.set.name, language: "EN",
+                                     variant: variant, productID: PriceIdentity.productID(from: card.tcgplayer?.url))
+        return await allQuotes(primary: card, identity: identity)
+    }
+    static func allQuotes(primary: APICard?, identity: PriceIdentity) async -> [PriceQuote] {
+        await collect([
+            ("Pokémon TCG API · TCGplayer", {
+                guard let card = primary, let price = card.tcgplayer?.prices?[identity.variant]?.market,
+                      price.isFinite, price >= 0 else { return [] }
+                let rate = try await ExchangeRates.shared.rate("USD")
+                return ForeignPrice(amount: price, source: "TCGplayer · \(identity.variant) · raw NM", date: card.tcgplayer?.updatedAt ?? "").converted(rate: rate).map { [$0] } ?? []
+            }),
+            ("Pokémon TCG API · Cardmarket", {
+                guard let market = primary?.cardmarket, !identity.variant.lowercased().contains("1stedition"),
+                      let price = identity.variant == "reverseHolofoil" ? market.prices?.reverseHoloTrend : market.prices?.trendPrice,
+                      price.isFinite, price >= 0 else { return [] }
+                let rate = try await ExchangeRates.shared.rate("EUR")
+                return ForeignPrice(amount: price, currency: "EUR", source: "Cardmarket · trend · ikke standsspecifik", date: market.updatedAt ?? "").converted(rate: rate).map { [$0] } ?? []
+            }),
+            ("JustTCG", { try await ExtraPriceSources.just(identity) }),
+            ("PokemonPriceTracker", { try await ExtraPriceSources.tracker(identity) })
+        ])
     }
     static func justTCG(productID: String) async throws -> [PriceQuote] {
-        let key = Keychain.get("justTCG")
-        guard !key.isEmpty, !productID.isEmpty, productID.allSatisfy(\.isNumber) else {
-            throw APIError.message("Indtast JustTCG-nøgle i Indstillinger og kortets TCGplayer-produkt-id.")
+        guard !productID.isEmpty, productID.allSatisfy(\.isNumber) else { return [] }
+        return try await ExtraPriceSources.just(PriceIdentity(name: "", number: "", setName: "", language: "EN", variant: "normal", productID: productID), allVariants: true)
+    }
+    @MainActor
+    static func savedQuotes(_ card: CardItem, productID: String = "") async -> [PriceQuote] {
+        var identity = PriceIdentity(name: card.name, number: card.number, setName: card.setName, language: card.language, variant: card.variant)
+        if !productID.isEmpty, productID.allSatisfy(\.isNumber) { identity.productID = productID }
+        var primary: APICard?
+        if identity.english {
+            do {
+                if !card.apiID.isEmpty {
+                    var request = URLRequest(url: URL(string: "https://api.pokemontcg.io/v2/cards/" + card.apiID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!)!)
+                    let key = Keychain.get("pokemonAPI")
+                    if !key.isEmpty { request.setValue(key, forHTTPHeaderField: "X-Api-Key") }
+                    struct Response: Decodable { let data: APICard }
+                    primary = try JSONDecoder().decode(Response.self, from: await HTTP.data(request)).data
+                } else {
+                    let info = CardInfo(name: card.name, number: card.number, language: card.language, setCode: card.setCode)
+                    let result = try await CardAPI.search(info, setName: card.setName)
+                    if result.total == 1, let match = result.cards.first, CardAPI.score(match, info: info) >= 8 {
+                        primary = match
+                    }
+                }
+            } catch { DebugLog.shared.info("Pokémon TCG API: springer over; prøver ekstra priskilder") }
         }
-        var url = URLComponents(string: "https://api.justtcg.com/v1/cards")!
-        url.queryItems = [URLQueryItem(name: "tcgplayerId", value: productID), URLQueryItem(name: "condition", value: "NM")]
-        var request = URLRequest(url: url.url!)
-        request.setValue(key, forHTTPHeaderField: "x-api-key")
-        struct Response: Decodable {
-            let data: [Card]
-            struct Card: Decodable {
-                let name: String
-                let variants: [Variant]
-            }
-            struct Variant: Decodable {
-                let condition: String
-                let printing: String
-                let price: Double?
-                let lastUpdated: Double?
-                let language: String?
-            }
-        }
-        let response = try JSONDecoder().decode(Response.self, from: await HTTP.data(request))
-        let rate = try await ExchangeRates.shared.rate("USD")
-        return response.data.flatMap { card in
-            card.variants.compactMap { variant in
-                guard ["NM","Near Mint"].contains(variant.condition), let price = variant.price else { return nil }
-                let date = variant.lastUpdated.map { ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: $0)) } ?? ""
-                return PriceQuote(dkk: price * rate.rate, source: "JustTCG · \(card.name) · \(variant.printing) · \(variant.language ?? "English") · NM", sourceDate: date, rateDate: rate.date)
-            }
-        }
+        if identity.productID.isEmpty { identity.productID = PriceIdentity.productID(from: primary?.tcgplayer?.url) }
+        return await allQuotes(primary: primary, identity: identity)
     }
 }

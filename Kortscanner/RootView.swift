@@ -309,7 +309,7 @@ struct CardReviewView: View {
         priceText = ""
         do {
             quotes = try await PriceService.quotes(card, variant: variant)
-            if let first = quotes.first(where: { $0.source.hasPrefix("TCGplayer") }) ?? (quotes.count == 1 ? quotes.first : nil) {
+            if let first = quotes.first(where: { $0.source.hasPrefix("TCGplayer") }) ?? quotes.first {
                 quote = first
                 priceText = String(format: "%.2f", first.dkk).replacingOccurrences(of: ".", with: ",")
             }

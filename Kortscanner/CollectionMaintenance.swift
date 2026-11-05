@@ -95,42 +95,23 @@ final class PriceRefreshService {
         defer { running = false }
         do {
             let cards = try context.fetch(FetchDescriptor<CardItem>()).filter {
-                $0.deletedAt == nil && !$0.needsReview && !["JP", "Japanese", "Korean"].contains($0.language) && (force || $0.priceRefreshPending)
+                $0.deletedAt == nil && !$0.needsReview && (force || $0.priceRefreshPending)
             }
             for card in cards {
+                let quotes = await PriceService.savedQuotes(card)
+                let quote = quotes.first(where: { $0.source == card.priceSource }) ?? quotes.first
                 do {
-                    if card.apiID.isEmpty {
-                        let info = CardInfo(name: card.name, number: card.number, language: card.language, setCode: card.setCode)
-                        let result = try await CardAPI.search(info)
-                        guard result.total == 1, let match = result.cards.first,
-                              CardAPI.score(match, info: info) >= 8,
-                              match.variants.count == 1 else { continue }
-                        card.apiID = match.id
-                        card.setName = match.set.name
-                        card.setLogoURL = match.set.images?.logo ?? ""
-                        card.variant = match.variants[0]
-                    }
-                    var request = URLRequest(url: URL(string: "https://api.pokemontcg.io/v2/cards/" + card.apiID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!)!)
-                    let key = Keychain.get("pokemonAPI")
-                    if !key.isEmpty { request.setValue(key, forHTTPHeaderField: "X-Api-Key") }
-                    struct Response: Decodable { let data: APICard }
-                    let response = try JSONDecoder().decode(Response.self, from: await HTTP.data(request))
-                    let quotes = try await PriceService.quotes(response.data, variant: card.variant)
-                    let originalSource = card.priceSource
-                    let quote = quotes.first(where: { $0.source == originalSource }) ?? (originalSource.isEmpty ? quotes.first(where: { $0.source.hasPrefix("TCGplayer") }) : nil) ?? (quotes.count == 1 ? quotes.first : nil)
                     if let quote {
                         try card.recordPrice(quote.dkk, source: quote.source, sourceDate: quote.sourceDate, rateDate: quote.rateDate)
                         try CollectionMaintenance.commit(context)
-                        DebugLog.shared.info("Pris opdateret i DKK med historik")
+                        DebugLog.shared.info("Pris opdateret i DKK med historik · \(quote.source)")
                     } else {
                         card.priceRefreshPending = true
                         try context.save()
                     }
                 } catch {
                     card.priceRefreshPending = true
-                    try context.save()
-                    DebugLog.shared.info("Prisopdatering venter på net eller priskilde")
-                    break
+                    DebugLog.shared.info("Prisen kunne ikke gemmes; fortsætter med næste kort")
                 }
             }
         } catch { DebugLog.shared.error("Priskø kunne ikke læses") }

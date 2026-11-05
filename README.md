@@ -126,3 +126,23 @@ Buildet forsøger også at tage simulatorbilleder af Samling og Indstillinger i 
 - Google Fotos kræver et iOS OAuth-klient-id. En manglende konfiguration er ikke en uploadfejl. Åbn Konti → Hjælp: forbind Google Fotos og følg guiden; brug bundle-id'et fra den installerede app. Ingen klient-id'er skal ind i GitHub.
 - En rotation af et allerede uploadet foto ændrer kun den lokale kopi; et tidligere foto i Google Fotos ændres ikke.
 - Test på telefonen: scan et kort, kontrollér begge sider, drej og fortryd, gem og genåbn. Kontroller vaterpasset over et fladt bord. Mål et kort med kendte kantbredder og prøv begge sider. Scan en ACE-etiket, og prøv sætnavn + nummer ved manglende match.
+
+## Ekstra priskilder · version 1.3
+Indstillinger → Konti har felterne JustTCG-nøgle og PokemonPriceTracker-nøgle. Tryk Gem API-nøgler i Keychain. Nøgler sendes kun til deres respektive API i autentificeringsheaderen. De gemmes ikke i UserDefaults, samlingsbackup, CSV/JSON-eksport, logs eller repoet.
+
+Prisvalg efter et katalogmatch og Hent alle priskilder i kortdetaljer bruger Pokémon TCG API, JustTCG og PokemonPriceTracker. Opdatér priser i Samling bruger samme fallback. En manglende nøgle, afvist adgang, timeout, ugyldigt svar eller 429 stopper kun den pågældende kilde. Ved kaldgrænser respekteres Retry-After i sekunder; ellers holdes en kort pause. Gem nøglerne igen for at nulstille pausen efter en rettelse. Svar caches i hukommelsen i en time for at begrænse forbrug.
+
+JustTCG v1-priser og PokemonPriceTrackers variantpriser er USD, som omregnes med dagens gemte valutakurs til DKK. Cardmarket-trend er EUR og omregnes ligeledes. Ingen fast eller opdigtet valutakurs bruges. Hvis kursen mangler, springes den pris over; en allerede gemt DKK-pris bevares.
+
+TCGplayer-produkt-id udledes, hvor katalogets produktlink indeholder det. Ellers kræves et entydigt match på navn, nummer og sæt. I kortdetaljer kan du valgfrit indtaste et TCGplayer-produkt-id fra det rigtige kort. Andre kort, sprog, print-varianter, udløbne JustTCG-priser og PokemonPriceTracker-priser med ukendt eller lavere stand springes over. PokemonPriceTrackers generelle market-pris bruges ikke som en gættet NM-pris. Alle ekstra priser er raw NM-referencer; slab-priser beregnes ikke.
+
+Kilden, variant, prisdato og valutakursdato vises ved prisvalget og den gemte pris. Vælg en anden kilde i kortets prisafsnit for at gemme den og tilføje et historikpunkt. Priser fra forskellige kilder gennemsnitsberegnes ikke.
+
+Dokumentation: https://justtcg.com/docs/api/cards og https://www.pokemonpricetracker.com/api-reference (OpenAPI: https://www.pokemonpricetracker.com/api/openapi).
+
+Test på telefonen:
+1. Gem én nøgle ad gangen, vælg et kendt kort og Hent alle priskilder. Kontrollér kilden og variant.
+2. Prøv en forkert nøgle til den ene kilde, mens den anden er korrekt. De øvrige priser skal stadig komme frem.
+3. Fjern begge ekstra nøgler. Pokémon TCG API skal stadig kunne bruges.
+4. Vælg en pris, genåbn kortet og kontrollér DKK, kilde, datoer og historik.
+API-kald med gyldige private nøgler skal testes på din telefon. Automatiske tests bruger konstruerede svar uden nøgler og kontrollerer parsing, match, stand, valuta, fallback og 429-pause.
