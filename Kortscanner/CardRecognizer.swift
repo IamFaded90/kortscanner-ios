@@ -2,6 +2,8 @@ import Foundation
 import UIKit
 import Vision
 import FoundationModels
+import CoreImage
+import ImageIO
 
 struct CardInfo: Sendable {
     var name = ""
@@ -80,6 +82,35 @@ enum CardRecognizer {
         return info
     }
 
+    static func upright(_ data: Data) async -> Data {
+        await Task.detached(priority: .userInitiated) {
+            guard let cg = UIImage(data: data)?.cgImage else { return data }
+            let image = CIImage(cgImage: cg)
+            let orientations: [CGImagePropertyOrientation] = cg.width > cg.height ? [.right, .left] : [.up, .down]
+            let context = CIContext()
+            var best = data
+            var bestScore = -1.0
+            for orientation in orientations {
+                let candidate = image.oriented(orientation)
+                guard let output = context.createCGImage(candidate, from: candidate.extent) else { continue }
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.usesLanguageCorrection = false
+                request.recognitionLanguages = ["en-US", "ja-JP", "ko-KR"]
+                do { try VNImageRequestHandler(cgImage: output).perform([request]) } catch { continue }
+                let score = (request.results ?? []).reduce(0.0) { partial, observation in
+                    guard let text = observation.topCandidates(1).first else { return partial }
+                    return partial + Double(text.confidence) * Double(min(text.string.count, 30)) * (observation.boundingBox.midY > 0.5 ? 1.15 : 1)
+                }
+                if score > bestScore {
+                    bestScore = score
+                    best = UIImage(cgImage: output).jpegData(compressionQuality: 0.92) ?? data
+                }
+            }
+            return best
+        }.value
+    }
+
     static func ocr(_ data: Data) async throws -> [String] {
         try await Task.detached(priority: .userInitiated) {
             guard let image = UIImage(data: data)?.cgImage else { throw ScanError.invalidImage }
@@ -87,6 +118,7 @@ enum CardRecognizer {
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = false
             request.automaticallyDetectsLanguage = true
+            request.recognitionLanguages = ["en-US", "ja-JP", "ko-KR"]
             try VNImageRequestHandler(cgImage: image).perform([request])
             return (request.results ?? [])
                 .sorted { a, b in

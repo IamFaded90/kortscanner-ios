@@ -87,16 +87,29 @@ enum CollectionMaintenance {
 final class PriceRefreshService {
     static let shared = PriceRefreshService()
     private var running = false
+    private var lastAttempt = Date.distantPast
     func refresh(_ context: ModelContext, force: Bool = false) async {
-        guard !running else { return }
+        guard !running, UploadQueue.shared.online, force || lastAttempt.timeIntervalSinceNow < -120 else { return }
+        lastAttempt = Date()
         running = true
         defer { running = false }
         do {
             let cards = try context.fetch(FetchDescriptor<CardItem>()).filter {
-                $0.deletedAt == nil && !$0.needsReview && !$0.apiID.isEmpty && (force || $0.priceRefreshPending)
+                $0.deletedAt == nil && !$0.needsReview && !["JP", "Japanese", "Korean"].contains($0.language) && (force || $0.priceRefreshPending)
             }
             for card in cards {
                 do {
+                    if card.apiID.isEmpty {
+                        let info = CardInfo(name: card.name, number: card.number, language: card.language, setCode: card.setCode)
+                        let result = try await CardAPI.search(info)
+                        guard result.total == 1, let match = result.cards.first,
+                              CardAPI.score(match, info: info) >= 8,
+                              match.variants.count == 1 else { continue }
+                        card.apiID = match.id
+                        card.setName = match.set.name
+                        card.setLogoURL = match.set.images?.logo ?? ""
+                        card.variant = match.variants[0]
+                    }
                     var request = URLRequest(url: URL(string: "https://api.pokemontcg.io/v2/cards/" + card.apiID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!)!)
                     let key = Keychain.get("pokemonAPI")
                     if !key.isEmpty { request.setValue(key, forHTTPHeaderField: "X-Api-Key") }
@@ -104,7 +117,7 @@ final class PriceRefreshService {
                     let response = try JSONDecoder().decode(Response.self, from: await HTTP.data(request))
                     let quotes = try await PriceService.quotes(response.data, variant: card.variant)
                     let originalSource = card.priceSource
-                    let quote = quotes.first(where: { $0.source == originalSource }) ?? (quotes.count == 1 ? quotes.first : nil)
+                    let quote = quotes.first(where: { $0.source == originalSource }) ?? (originalSource.isEmpty ? quotes.first(where: { $0.source.hasPrefix("TCGplayer") }) : nil) ?? (quotes.count == 1 ? quotes.first : nil)
                     if let quote {
                         try card.recordPrice(quote.dkk, source: quote.source, sourceDate: quote.sourceDate, rateDate: quote.rateDate)
                         try CollectionMaintenance.commit(context)

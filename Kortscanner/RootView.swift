@@ -38,6 +38,7 @@ struct RootView: View {
         .tint(Theme.blue)
         .transaction { if reduceMotion { $0.disablesAnimations = true } }
         .sheet(isPresented: $router.showChat) { CollectionChat() }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("KortscannerScanRequested"))) { _ in router.requestScan() }
         .onOpenURL { url in if url.scheme == "kortscanner" { router.tab = url.host == "scan" ? 0 : 1 } }
         .task {
             UploadQueue.shared.bind(context)
@@ -101,7 +102,8 @@ struct ScanView: View {
         guard !pages.isEmpty else { return }
         busy = true
         images = pages
-        info = await CardRecognizer.recognize(pages[0])
+        images[0] = await CardRecognizer.upright(pages[0])
+        info = await CardRecognizer.recognize(images[0])
         if info.language == "Japanese" { info.language = "JP" }
         if info.language == "English" { info.language = "EN" }
         if pages.count > 2 {
@@ -148,77 +150,107 @@ struct CardReviewView: View {
         _variant = State(initialValue: existing?.variant ?? "normal")
         _priceText = State(initialValue: existing?.priceDKK.map { String(format: "%.2f", $0).replacingOccurrences(of: ".", with: ",") } ?? "")
     }
+    @State private var editing = false
+    @State private var cancel = false
+    @Environment(\.dynamicTypeSize) private var textSize
+    private var parsedPrice: Double? { Double(priceText.replacingOccurrences(of: ",", with: ".")) }
+    private var confidenceColor: Color { confidence == "Høj" ? .green : confidence == "Middel" ? .yellow : .red }
     var body: some View {
         NavigationStack {
-            Form {
-                if let data = images.first, let image = UIImage(data: data) {
-                    Section { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 240).frame(maxWidth: .infinity) }
-                }
-                Section("Kortdata · sikkerhed: \(confidence.lowercased())") {
-                    TextField("Navn", text: $info.name)
-                    TextField("Kortnummer, fx 091/173", text: $info.number)
-                    TextField("Sæt", text: $setName)
-                    TextField("Sæt-kode", text: $info.setCode)
-                    TextField("Sprog, fx EN eller JP", text: $info.language)
-                    TextField("Sjældenhed", text: $info.rarity)
-                    Button("Find de bedste match") { Task { await lookup() } }.disabled(busy)
-                    if busy { ProgressView("Slår kort og pris op …") }
-                    if !message.isEmpty { Text(message).font(.footnote).foregroundStyle(.secondary) }
-                }
-                if !matches.isEmpty {
-                    Section("Tryk på det rigtige kort") {
-                        ForEach(matches) { match in
-                            Button { Task { await select(match) } } label: {
-                                HStack {
-                                    AsyncImage(url: URL(string: match.images.small)) { image in image.resizable().scaledToFit() } placeholder: { ProgressView() }.frame(width: 65, height: 90)
-                                    VStack(alignment: .leading) {
-                                        Text(match.name).font(.headline)
-                                        Text("\(match.set.name) · \(match.number)").font(.caption)
-                                    }
-                                    Spacer()
-                                    if selected?.id == match.id { Image(systemName: "checkmark.circle.fill") }
+            ScrollView {
+                VStack(spacing: 22) {
+                    if let data = images.first, let image = UIImage(data: data) {
+                        Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 280).clipShape(RoundedRectangle(cornerRadius: 20))
+                    }
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(info.name.isEmpty ? "Navn mangler · tryk Ret" : info.name).font(.title.bold())
+                        Text("\(info.number) · \(setName.isEmpty ? "Sæt mangler" : setName) · \(info.language.isEmpty ? "Sprog ukendt" : info.language)").foregroundStyle(.secondary)
+                        Text("Variant: \(variantName(variant))").font(.subheadline)
+                        Text(dkk(parsedPrice)).font(.largeTitle.bold())
+                        Label("Sikkerhed: \(confidence.lowercased())", systemImage: "circle.fill").foregroundStyle(confidenceColor).font(.subheadline.bold())
+                        if busy { ProgressView("Finder match og pris …") }
+                        if !message.isEmpty { Text(message).font(.footnote).foregroundStyle(.secondary) }
+                    }.padding(20).frame(maxWidth: .infinity, alignment: .leading).glassPanel()
+                    if !matches.isEmpty {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("Vælg det rigtige kort").font(.headline)
+                            LazyVGrid(columns: textSize.isAccessibilitySize ? [GridItem(.flexible())] : [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                                ForEach(matches) { match in
+                                    Button { Task { await select(match) } } label: {
+                                        VStack(spacing: 7) {
+                                            AsyncImage(url: URL(string: match.images.small)) { image in image.resizable().scaledToFit() } placeholder: { ProgressView() }.frame(height: 130)
+                                            Text(match.name).font(.caption.bold()).lineLimit(3)
+                                            Text("\(match.set.name) · \(match.number)").font(.caption2).lineLimit(3)
+                                            if selected?.id == match.id { Label("Valgt", systemImage: "checkmark.circle.fill").font(.caption) }
+                                        }.padding(8).frame(maxWidth: .infinity).background(selected?.id == match.id ? Theme.blue.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 16))
+                                    }.buttonStyle(.plain)
                                 }
                             }
-                        }
+                        }.padding(16).glassPanel()
                     }
-                }
-                if let selected {
-                    Section("Variant og pris") {
-                        Picker("Variant", selection: $variant) {
-                            ForEach(selected.variants, id: \.self) { Text(variantName($0)).tag($0) }
-                        }.onChange(of: variant) { _, _ in Task { await loadQuotes(selected) } }
-                        ForEach(Array(quotes.enumerated()), id: \.offset) { _, value in
-                            Button { quote = value; priceText = String(format: "%.2f", value.dkk).replacingOccurrences(of: ".", with: ",") } label: {
-                                VStack(alignment: .leading) {
-                                    Text(dkk(value.dkk)).font(.headline)
-                                    Text(value.source).font(.caption)
-                                    Text("Prisdato: \(value.sourceDate) · kurs: \(value.rateDate)").font(.caption2)
-                                }
-                            }
-                        }
+                    if editing { editingFields }
+                    Toggle("Jeg har kontrolleret kort og variant", isOn: $confirmed).font(.subheadline).padding(16).frame(minHeight: 56).glassPanel()
+                    HStack(spacing: 14) {
+                        Button("Gem") { save() }.buttonStyle(BigButtonStyle()).disabled(!confirmed || info.name.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+                        Button(editing ? "Skjul rettelser" : "Ret") { editing.toggle() }.buttonStyle(BigButtonStyle(filled: false))
                     }
+                    Text("Priser er vejledende. En slab-pris kan være højere end raw-prisen.").font(.footnote).foregroundStyle(.secondary)
+                }.padding(20)
+            }.background(Theme.bg).navigationTitle("Dit kort").navigationBarTitleDisplayMode(.inline)
+                .toolbar { Button("Luk") { cancel = true } }
+                .interactiveDismissDisabled()
+                .confirmationDialog("Forlad kortet uden at gemme?", isPresented: $cancel, titleVisibility: .visible) {
+                    Button("Forlad uden at gemme", role: .destructive) { dismiss() }
                 }
-                Section("Værdi i danske kroner") {
-                    TextField("Pris i DKK (valgfri)", text: $priceText).keyboardType(.decimalPad)
-                    Text("Raw-priser er vejledende. Cardmarket-trend er ikke en specifik NM-vurdering. Kontroller variant og stand.").font(.footnote).foregroundStyle(.secondary)
-                    if !info.gradingCompany.isEmpty { Text("Et slab kan være mere værd end den viste raw-pris.").font(.footnote) }
-                }
-                Section("Gradering · valgfrit") {
-                    TextField("Firma: PSA, BGS, CGC eller ARS", text: $info.gradingCompany)
-                    TextField("Karakter", text: $info.grade)
-                    TextField("Certifikatnummer", text: $info.certNumber)
-                }
-                Section {
-                    Toggle("Jeg har kontrolleret kort og variant", isOn: $confirmed)
-                    Button("Gem i samling") { save() }
-                        .disabled(!confirmed || info.name.trimmingCharacters(in: .whitespaces).isEmpty || busy)
-                }
-            }.navigationTitle("Kontrollér dit kort")
-                .toolbar { Button("Annuller") { dismiss() } }
                 .task { await lookup() }
         }
     }
+    private var editingFields: some View {
+        VStack(spacing: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Kortdata").font(.headline)
+                TextField("Navn", text: $info.name).textFieldStyle(.roundedBorder).frame(minHeight: 56)
+                TextField("Kortnummer", text: $info.number).textFieldStyle(.roundedBorder).frame(minHeight: 56)
+                TextField("Sæt", text: $setName).textFieldStyle(.roundedBorder).frame(minHeight: 56)
+                DisclosureGroup("Sprog, sæt-kode og sjældenhed") {
+                    TextField("Sprog, fx EN eller JP", text: $info.language).textFieldStyle(.roundedBorder).frame(minHeight: 56)
+                    TextField("Sæt-kode", text: $info.setCode).textFieldStyle(.roundedBorder).frame(minHeight: 56)
+                    TextField("Sjældenhed", text: $info.rarity).textFieldStyle(.roundedBorder).frame(minHeight: 56)
+                }.frame(minHeight: 56)
+                Button("Find match igen") { Task { await lookup() } }.frame(minHeight: 56).disabled(busy)
+            }.padding(18).glassPanel()
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Variant og pris").font(.headline)
+                if let selected {
+                    Picker("Variant", selection: $variant) { ForEach(selected.variants, id: \.self) { Text(variantName($0)).tag($0) } }
+                        .frame(minHeight: 56).onChange(of: variant) { _, _ in Task { await loadQuotes(selected) } }
+                    ForEach(Array(quotes.enumerated()), id: \.offset) { _, value in
+                        Button { quote = value; priceText = String(format: "%.2f", value.dkk).replacingOccurrences(of: ".", with: ",") } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(dkk(value.dkk)).font(.headline)
+                                Text(value.source).font(.caption)
+                                Text("Prisdato: \(value.sourceDate) · kurs: \(value.rateDate)").font(.caption2)
+                            }.frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                        }
+                    }
+                }
+                TextField("Pris i DKK · valgfri", text: $priceText).keyboardType(.decimalPad).textFieldStyle(.roundedBorder).frame(minHeight: 56)
+                Text("Cardmarket-trend er ikke en standsspecifik NM-pris. Vælg korrekt variant.").font(.footnote).foregroundStyle(.secondary)
+            }.padding(18).glassPanel()
+            DisclosureGroup("Gradering fra slab-etiket") {
+                TextField("Firma: PSA, BGS, CGC eller ARS", text: $info.gradingCompany).textFieldStyle(.roundedBorder).frame(minHeight: 56)
+                TextField("Trykt karakter", text: $info.grade).textFieldStyle(.roundedBorder).frame(minHeight: 56)
+                TextField("Certifikatnummer", text: $info.certNumber).textFieldStyle(.roundedBorder).frame(minHeight: 56)
+                Text("Vi læser kun etiketten. Ingen AI-vurdering af kortets stand.").font(.footnote)
+            }.padding(18).frame(minHeight: 56).glassPanel()
+        }
+    }
     private func lookup() async {
+        guard UploadQueue.shared.online else {
+            message = "Du er offline. Ret oplysningerne, og gem kortet lokalt. Match og pris kræver net."
+            confidence = "Lav"
+            return
+        }
         busy = true
         message = ""
         selected = nil
@@ -258,7 +290,7 @@ struct CardReviewView: View {
         priceText = ""
         do {
             quotes = try await PriceService.quotes(card, variant: variant)
-            if quotes.count == 1, let first = quotes.first {
+            if let first = quotes.first(where: { $0.source.hasPrefix("TCGplayer") }) ?? (quotes.count == 1 ? quotes.first : nil) {
                 quote = first
                 priceText = String(format: "%.2f", first.dkk).replacingOccurrences(of: ".", with: ",")
             }
@@ -277,6 +309,7 @@ struct CardReviewView: View {
         card.needsReview = false
         card.closeup = images.count > 2 ? images[2] : nil
         card.setName = setName
+        card.setLogoURL = selected?.set.images?.logo ?? existing?.setLogoURL ?? ""
         card.apiID = selected?.id ?? existing?.apiID ?? ""
         card.variant = variant
         card.priceDKK = amount
@@ -287,7 +320,7 @@ struct CardReviewView: View {
             card.sequence = UserDefaults.standard.integer(forKey: "lastCardSequence") + 1
             context.insert(card)
         }
-        card.priceRefreshPending = amount == nil && !card.apiID.isEmpty
+        card.priceRefreshPending = amount == nil && !["JP", "Japanese", "Korean"].contains(info.language)
         do {
             if card.keepLocked { card.status = "Beholder" }
             if let amount { try card.recordPrice(amount, source: card.priceSource, sourceDate: card.priceDate, rateDate: card.exchangeDate) }

@@ -85,8 +85,13 @@ Repoet indeholder kun genereret kildekode og tests. Ingen IPA, kortbilleder, bac
 ### Offline
 Kamera, OCR, lokal samling, chat-fallback og manuel pris virker uden net. Apple Intelligence virker lokalt, når modellen allerede er hentet og tilgængelig. Genkendte API-kort med en ventende pris genforsøges, når appen er åben og nettet vender tilbage. Ukendte eller tvetydige kort kræver dit matchvalg; de får aldrig automatisk en gættet pris. Google-upload ligger i en vedvarende kø og fortsætter i appen; der bruges ingen baggrundspush.
 
-### Widget og gratis Apple-ID
-Widget-extensionen kræver ingen App Groups. Den normale hjemmeskærmswidget er derfor et **manuelt øjebliksbillede**, hvor du selv indtaster samlet værdi og seneste kort under Redigér widget. Den kan ikke automatisk læse appens private SwiftData-lager. Live Activity får derimod aktuelle batch-data direkte fra appen, uden delt lager. Hvis Sideloadly eller gratis signering afviser extensions på din installation, kan du stadig bruge hovedappen; deaktivér extensionen ved signering. Det skal verificeres på din telefon.
+### Siri, Kontrolcenter og Handlingsknap
+Der er ingen hjemmeskærmswidget.
+- I Genveje finder du **Kortscanner → Hvad er min samling værd?** Genvejen læser SwiftData direkte, summerer ikke-solgte eksemplarer og fortæller, hvor mange der mangler pris. Det er de senest gemte priser, ikke et nyt netopslag og ikke et AI-gæt.
+- Åbn **Kontrolcenter → Tilføj en betjeningsfunktion**, find **Kortscanner → Scan et kort**. Kontrollen åbner appens kamera.
+- På iPhone 17 Pro Max: **Indstillinger → Handlingsknap → Genvej → Scan et kort** under Kortscanner.
+- Live Activity vises under batch, når iOS tillader det. Ingen push eller App Groups bruges.
+- Extensionen med Kontrolcenter og Live Activity skal være bevaret ved signering i Sideloadly. Hvis gratis signering afviser extensionen, virker hovedappen og Siri-genvejene stadig; det skal kontrolleres på din telefon.
 
 ### Fortryd og sletning
 Lokale ændringer (nye kort, pris, stand, status, sletning, samlingsrydning og gendannelse) har fortryd/gentag i den aktuelle session, op til ti handlinger. Sletning kræver bekræftelse. Sletning af et eksemplar er lokal og kan fortrydes. Foto-upload kan ikke trækkes tilbage af en appendonly-app; billeder i Fotos og Google Fotos slettes kun manuelt af dig. Afviste eller usikre data bliver ikke automatisk solgt.
@@ -95,6 +100,8 @@ Lokale ændringer (nye kort, pris, stand, status, sletning, samlingsrydning og g
 Fase 1: test kameraramme, auto-optagelse, japansk OCR, slab-etiket, afvis/tillad kamera og offline scanning.
 Fase 2: vælg match og holo-variant, kontrollér DKK-kurs/prisdato, gem forskellige eksemplarer og test PSA-låsen.
 Fase 3: konfigurer Google, test lokalt album, Google-album, billedrækkefølge, upload efter netafbrydelse og salgsudkast uden publicering.
-Fase 4: scan tre kort i batch, kontrollér dem i Samling, redigér pris og se historik, test stand-zoom, gendan en backup, fortryd sletning, prøv Siri/chat/Live Activity og widget. Test også stor tekst, lyst tema og Reducer bevægelse.
+Fase 4: scan tre kort i batch, kontrollér dem i Samling, redigér pris og se historik, test stand-zoom, gendan en backup, fortryd sletning, prøv Siri/chat/Live Activity og Kontrolcenter/Handlingsknap. Test også stor tekst, lyst tema og Reducer bevægelse.
 
 GitHub-simulatoren tester parser, beskyttede kort, identitet for eksemplarer, prisregistrering og backup-rundtur. Kamera, sensorer, Apple Intelligence og OAuth skal desuden testes på en fysisk telefon. At et IPA-build er grønt dokumenterer kompilering og tests, ikke en fuld fysisk enhedstest.
+
+Buildet forsøger også at tage simulatorbilleder af Samling og Indstillinger i lyst og mørkt tema. De er kun tomme testvisninger og indeholder ingen personlige samlingsdata. Artifacts udløber efter én dag. Backup- og prisgrafdata skabes af faktiske lokale gemninger; der indsættes ingen fiktiv samling.

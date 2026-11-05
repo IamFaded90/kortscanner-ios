@@ -58,8 +58,10 @@ final class BatchSession: ObservableObject {
         defer { working = false }
         do {
             while let card = try context.fetch(FetchDescriptor<CardItem>()).first(where: { $0.deletedAt == nil && $0.needsReview && $0.name == "Kort kræver kontrol" }) {
-                let info = await CardRecognizer.recognize(card.front)
+                let upright = await CardRecognizer.upright(card.front)
+                let info = await CardRecognizer.recognize(upright)
                 guard card.deletedAt == nil, card.needsReview, card.name == "Kort kræver kontrol" else { continue }
+                card.front = upright
                 card.name = info.name.isEmpty ? "Ukendt kort" : info.name
                 card.number = info.number
                 card.language = info.language == "Japanese" ? "JP" : info.language == "English" ? "EN" : info.language

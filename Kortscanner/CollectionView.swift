@@ -21,6 +21,8 @@ struct CollectionView: View {
     @State private var exportURL: URL?
     @State private var error = ""
     @State private var refreshing = false
+    @State private var showDelete = false
+    @State private var deleting: CardItem?
     private var cards: [CardItem] { allCards.filter { $0.deletedAt == nil } }
     private var visible: [CardItem] {
         cards.filter { card in
@@ -47,6 +49,8 @@ struct CollectionView: View {
     }
     var body: some View {
         NavigationStack {
+            Group {
+                if grid {
             ScrollView {
                 VStack(spacing: 22) {
                     portfolio
@@ -65,7 +69,9 @@ struct CollectionView: View {
                                 groupLayout(groups.filter { ($0.first.setName.isEmpty ? "Ukendt sæt" : $0.first.setName) == set })
                             } label: {
                                 HStack {
-                                    Image(systemName: "folder.fill").foregroundStyle(Theme.blue)
+                                    if let logo = groups.first(where: { $0.first.setName == set })?.first.setLogoURL, !logo.isEmpty {
+                                        AsyncImage(url: URL(string: logo)) { image in image.resizable().scaledToFit() } placeholder: { Image(systemName: "folder.fill") }.frame(width: 50, height: 34)
+                                    } else { Image(systemName: "folder.fill").foregroundStyle(Theme.blue) }
                                     Text(set).font(.headline)
                                     Spacer()
                                     Text("\(visible.filter { ($0.setName.isEmpty ? "Ukendt sæt" : $0.setName) == set }.count) kort")
@@ -75,6 +81,8 @@ struct CollectionView: View {
                     } else { groupLayout(groups) }
                     if let exportURL { ShareLink("Del eksport", item: exportURL).frame(minHeight: 56) }
                 }.padding(20).padding(.bottom, 100)
+            }
+                } else { listContent }
             }.background(Theme.bg)
                 .searchable(text: $search, prompt: "Navn, nummer eller sæt")
                 .navigationTitle("Samling")
@@ -90,6 +98,51 @@ struct CollectionView: View {
                     } label: { Label("Mere", systemImage: "ellipsis.circle").frame(minHeight: 56) }
                 }
         }
+        .confirmationDialog("Slet dette eksemplar?", isPresented: $showDelete, titleVisibility: .visible) {
+            Button("Slet eksemplar", role: .destructive) {
+                guard let card = deleting else { return }
+                let before = BackupCard(card)
+                card.deletedAt = Date()
+                do {
+                    try CollectionMaintenance.commit(context)
+                    let after = BackupCard(card)
+                    ActionHistory.shared.record("sletning", undo: { before.apply(to: card); CollectionMaintenance.saveAfterUndo(context) }, redo: { after.apply(to: card); CollectionMaintenance.saveAfterUndo(context) })
+                } catch { context.rollback(); self.error = "Kortet kunne ikke slettes." }
+                deleting = nil
+            }
+        } message: { Text("Kun dette eksemplar fjernes fra samlingen. Du kan fortryde.") }
+    }
+    private var listContent: some View {
+        List {
+            Section { portfolio; controls }.listRowBackground(Color.clear)
+            if groups.isEmpty {
+                Section {
+                    Text("Ingen kort med dette filter.")
+                    Button("Scan dit første kort") { AppRouter.shared.requestScan() }.frame(minHeight: 56)
+                }
+            }
+            ForEach(groups) { group in
+                DisclosureGroup {
+                    ForEach(group.cards) { card in
+                        NavigationLink { CardDetailView(card: card) } label: { CardCopyRow(card: card) }
+                            .swipeActions {
+                                Button(role: .destructive) { deleting = card; showDelete = true } label: { Label("Slet", systemImage: "trash") }
+                            }
+                    }
+                } label: {
+                    HStack {
+                        thumbnail(group.first, width: 50)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(group.first.name).font(.headline)
+                            Text("x\(group.cards.count) · \(dkk(group.total))")
+                        }
+                    }.frame(minHeight: 80)
+                }
+            }
+            if let exportURL { ShareLink("Del eksport", item: exportURL).frame(minHeight: 56) }
+            if !error.isEmpty { Text(error).foregroundStyle(.red) }
+            Color.clear.frame(height: 90).listRowBackground(Color.clear)
+        }.scrollContentBackground(.hidden)
     }
     private var portfolio: some View {
         VStack(alignment: .leading, spacing: 14) {

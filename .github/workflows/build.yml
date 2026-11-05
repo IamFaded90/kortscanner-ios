@@ -35,8 +35,28 @@ jobs:
         run: |
           set -o pipefail
           xcrun simctl list devices available -j > build/devices.json
-          DEVICE=$(python3 -c 'import json; d=json.load(open("build/devices.json")); print(next(x["udid"] for v in d["devices"].values() for x in v if x["name"].startswith("iPhone")))')
-          xcodebuild test -scheme Kortscanner -destination "platform=iOS Simulator,id=$DEVICE" -resultBundlePath build/Tests.xcresult CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/logs/tests.log
+          DEVICE=$(python3 -c 'import json; d=json.load(open("build/devices.json")); xs=[x for v in d["devices"].values() for x in v if x["name"].startswith("iPhone")]; print(next((x["udid"] for x in xs if x["name"]=="iPhone 17 Pro Max"), xs[0]["udid"]))')
+          echo "$DEVICE" > build/simulator-id.txt
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcodebuild test -scheme Kortscanner -derivedDataPath build/SimulatorData -parallel-testing-enabled NO -test-timeouts-enabled YES -maximum-test-execution-time-allowance 120 -destination "platform=iOS Simulator,id=$DEVICE" -resultBundlePath build/Tests.xcresult CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/logs/tests.log
+      - name: Kontrollér lyst og mørkt layout
+        continue-on-error: true
+        run: |
+          set -e
+          DEVICE=$(cat build/simulator-id.txt)
+          mkdir -p build/Screenshots
+          xcrun simctl install "$DEVICE" build/SimulatorData/Build/Products/Debug-iphonesimulator/Kortscanner.app
+          for MODE in dark light; do
+            xcrun simctl ui "$DEVICE" appearance "$MODE"
+            for TAB in 1 2; do
+              THEME="Mørk"
+              if [ "$MODE" = "light" ]; then THEME="Lys"; fi
+              xcrun simctl launch --terminate-running-process "$DEVICE" dk.iamfaded90.kortscanner -hasSeenOnboarding YES -screenshotTab "$TAB" -appearance "$THEME" -AppleLanguages '(da)' -AppleLocale da_DK
+              sleep 3
+              xcrun simctl io "$DEVICE" screenshot "build/Screenshots/$MODE-$TAB.png"
+            done
+          done
       - name: Byg til iPhone
         run: |
           set -o pipefail
@@ -66,6 +86,13 @@ jobs:
         with:
           name: Kortscanner-projekt
           path: build/Kortscanner-kildekode.zip
+          retention-days: 1
+      - name: Gem layoutbilleder
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kortscanner-layout
+          path: build/Screenshots
           retention-days: 1
       - name: Gem fejllogs og testresultater
         if: always()

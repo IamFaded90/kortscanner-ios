@@ -182,14 +182,8 @@ struct SettingsView: View {
                     Text("Undersøg gradering fra \(dkk(gradingThreshold))")
                 }.frame(minHeight: 56)
             }
-            Section("Widget uden App Groups") {
-                Text("En almindelig hjemmeskærmswidget kan ikke automatisk læse den lokale samling uden delt lager. Denne udgave har et manuelt øjebliksbillede: redigér widgetten og indtast værdi og seneste kort. Live Activity viser løbende batch-data fra appen.").font(.footnote)
-                Button("Kopiér aktuelle widgettal") {
-                    let total = activeCards.filter { $0.status != "Solgt" }.compactMap(\.priceDKK).reduce(0, +)
-                    let latest = activeCards.max { $0.createdAt < $1.createdAt }?.name ?? "Ingen kort"
-                    UIPasteboard.general.string = "\(dkk(total)) · Seneste kort: \(latest)"
-                    message = "Værdi og seneste kort er kopieret."
-                }.frame(minHeight: 56)
+            Section("Siri og Kontrolcenter") {
+                Text("Siri/Genveje: Hvad er min samling værd? læser de gemte tal direkte fra appen. Føj Scan et kort til Kontrolcenter, eller vælg den som Genvej under iPhones Handlingsknap.").font(.footnote)
             }
             feedback
         }.navigationTitle("Udseende og scanning")

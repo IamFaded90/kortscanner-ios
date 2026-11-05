@@ -33,7 +33,8 @@ struct APICard: Decodable, Identifiable, Sendable {
     let tcgplayer: TCGPlayer?
     let cardmarket: Cardmarket?
     struct Images: Decodable, Sendable { let small: String; let large: String? }
-    struct CardSet: Decodable, Sendable { let id: String; let name: String; let ptcgoCode: String?; let printedTotal: Int? }
+    struct CardSet: Decodable, Sendable { let id: String; let name: String; let ptcgoCode: String?; let printedTotal: Int?; let images: SetImages? }
+    struct SetImages: Decodable, Sendable { let logo: String? }
     struct TCGPlayer: Decodable, Sendable {
         let url: String?
         let updatedAt: String?

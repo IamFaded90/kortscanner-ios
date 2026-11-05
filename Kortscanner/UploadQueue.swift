@@ -7,6 +7,7 @@ import Combine
 final class UploadQueue: ObservableObject {
     static let shared = UploadQueue()
     @Published private(set) var running = false
+    @Published private(set) var online = true
     @Published private(set) var message = ""
     private var context: ModelContext?
     private var monitor: NWPathMonitor?
@@ -15,7 +16,13 @@ final class UploadQueue: ObservableObject {
         guard monitor == nil else { return }
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { path in
-            if path.status == .satisfied { Task { @MainActor in await UploadQueue.shared.process() } }
+            Task { @MainActor in
+                UploadQueue.shared.online = path.status == .satisfied
+                if path.status == .satisfied {
+                    await UploadQueue.shared.process()
+                    if let context = UploadQueue.shared.context { await PriceRefreshService.shared.refresh(context) }
+                }
+            }
         }
         monitor.start(queue: DispatchQueue(label: "kortscanner.network"))
         self.monitor = monitor

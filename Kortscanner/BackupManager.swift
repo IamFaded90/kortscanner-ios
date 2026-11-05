@@ -10,6 +10,7 @@ struct BackupCard: Codable, Sendable {
     var number: String
     var language: String
     var setName: String
+    var setLogoURL: String?
     var setCode: String
     var rarity: String
     var condition: String
@@ -34,7 +35,7 @@ struct BackupCard: Codable, Sendable {
 
     @MainActor init(_ card: CardItem) {
         id = card.id; createdAt = card.createdAt; name = card.name; number = card.number
-        language = card.language; setName = card.setName; setCode = card.setCode; rarity = card.rarity
+        language = card.language; setName = card.setName; setLogoURL = card.setLogoURL; setCode = card.setCode; rarity = card.rarity
         condition = card.condition; status = card.status; gradingCompany = card.gradingCompany
         grade = card.grade; certNumber = card.certNumber; priceDKK = card.priceDKK
         priceSource = card.priceSource; priceDate = card.priceDate; exchangeDate = card.exchangeDate
@@ -44,7 +45,7 @@ struct BackupCard: Codable, Sendable {
     }
     @MainActor func apply(to card: CardItem) {
         card.id = id; card.createdAt = createdAt; card.name = name; card.number = number
-        card.language = language; card.setName = setName; card.setCode = setCode; card.rarity = rarity
+        card.language = language; card.setName = setName; card.setLogoURL = setLogoURL ?? ""; card.setCode = setCode; card.rarity = rarity
         card.condition = condition; card.status = status; card.gradingCompany = gradingCompany
         card.grade = grade; card.certNumber = certNumber; card.priceDKK = priceDKK
         card.priceSource = priceSource; card.priceDate = priceDate; card.exchangeDate = exchangeDate

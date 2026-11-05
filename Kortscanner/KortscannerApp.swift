@@ -36,6 +36,7 @@ final class CardItem {
     var number: String = ""
     var language: String = ""
     var setName: String = ""
+    var setLogoURL: String = ""
     var setCode: String = ""
     var rarity: String = ""
     var gradingCompany: String = ""

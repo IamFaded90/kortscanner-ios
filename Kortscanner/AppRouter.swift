@@ -6,20 +6,11 @@ import SwiftData
 @MainActor
 final class AppRouter: ObservableObject {
     static let shared = AppRouter()
-    @Published var tab = 0
+    @Published var tab = UserDefaults.standard.integer(forKey: "screenshotTab")
     @Published var showChat = false
     func requestScan() { tab = 0 }
 }
 
-struct ScanCardIntent: AppIntent {
-    static var title: LocalizedStringResource = "Scan et kort"
-    static var description = IntentDescription("Åbner Kortscanner-kameraet.")
-    static var openAppWhenRun = true
-    @MainActor func perform() async throws -> some IntentResult {
-        AppRouter.shared.requestScan()
-        return .result()
-    }
-}
 struct CollectionValueIntent: AppIntent {
     static var title: LocalizedStringResource = "Hvad er min samling værd?"
     static var openAppWhenRun = true
