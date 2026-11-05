@@ -263,6 +263,7 @@ struct CardDetailView: View {
     @State private var showBack = false
     @State private var showZoom = false
     @State private var showCondition = false
+    @State private var showCentering = false
     @State private var showReview = false
     @State private var showDelete = false
     @State private var showStatus = false
@@ -286,6 +287,14 @@ struct CardDetailView: View {
                         Button("Zoom") { showZoom = true }
                     }.frame(minHeight: 56)
                 }.padding(18).glassPanel()
+                HStack {
+                    Button("Drej billedet 90°", systemImage: "rotate.right") {
+                        if let rotated = ImageRotation.clockwise(imageData) {
+                            edit("billedrotation") { if showBack { card.back = rotated } else { card.front = rotated } }
+                        }
+                    }.frame(maxWidth: .infinity, minHeight: 56)
+                    Button("Mål centrering") { showCentering = true }.frame(maxWidth: .infinity, minHeight: 56)
+                }
                 details
                 prices
                 actions
@@ -293,6 +302,7 @@ struct CardDetailView: View {
             }.padding(20).padding(.bottom, 100)
         }.background(Theme.bg).navigationTitle(card.name).navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showZoom) { ZoomPhotoView(data: imageData) }
+            .sheet(isPresented: $showCentering) { CenteringView(front: card.front, back: card.back) }
             .sheet(isPresented: $showCondition) { ConditionInspector(front: card.front, back: card.back) }
             .sheet(isPresented: $showReview) {
                 CardReviewView(images: [card.front, card.back, card.closeup].compactMap { $0 }, initial: CardInfo(name: card.name, number: card.number, language: card.language, setCode: card.setCode, rarity: card.rarity, gradingCompany: card.gradingCompany, grade: card.grade, certNumber: card.certNumber), existing: card) {}

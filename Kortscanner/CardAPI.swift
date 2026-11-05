@@ -62,12 +62,9 @@ enum CardAPI {
         if let n = Int(part) { return String(n) }
         return part
     }
-    static func search(_ info: CardInfo) async throws -> SearchResult {
-        if info.language == "JP" || info.language == "Japanese" || info.language == "Korean" {
-            throw APIError.message("Dette katalog matcher engelske kort. Gem det japanske/koreanske kort manuelt; vi gætter ikke på en engelsk pris.")
-        }
+    static func searchQuery(_ info: CardInfo, setName: String = "") -> String {
         func clean(_ value: String) -> String {
-            String(value.unicodeScalars.filter { CharacterSet.alphanumerics.union(.whitespaces).contains($0) })
+            String(value.unicodeScalars.filter { CharacterSet.alphanumerics.union(.whitespaces).union(CharacterSet(charactersIn: "&-")).contains($0) })
                 .trimmingCharacters(in: .whitespaces)
         }
         var clauses: [String] = []
@@ -75,9 +72,22 @@ enum CardAPI {
         let number = clean(normalizedNumber(info.number))
         if !name.isEmpty { clauses.append("name:\"\(name)\"") }
         if !number.isEmpty { clauses.append("number:\"\(number)\"") }
-        guard !clauses.isEmpty else { return SearchResult(cards: [], total: 0) }
+        let set = clean(setName)
+        if !set.isEmpty { clauses.append("set.name:\"\(set)\"") }
+        else if !info.setCode.isEmpty { clauses.append("(set.id:\"\(clean(info.setCode))\" OR set.ptcgoCode:\"\(clean(info.setCode))\")") }
+        if info.number.contains("/"), let total = Int(info.number.split(separator: "/").last ?? "") {
+            clauses.append("set.printedTotal:\(total)")
+        }
+        return clauses.joined(separator: " ")
+    }
+    static func search(_ info: CardInfo, setName: String = "") async throws -> SearchResult {
+        if info.language == "JP" || info.language == "Japanese" || info.language == "Korean" {
+            throw APIError.message("Dette katalog matcher engelske kort. Gem det japanske/koreanske kort manuelt; vi gætter ikke på en engelsk pris.")
+        }
+        let query = searchQuery(info, setName: setName)
+        guard !query.isEmpty else { return SearchResult(cards: [], total: 0) }
         var components = URLComponents(string: "https://api.pokemontcg.io/v2/cards")!
-        components.queryItems = [URLQueryItem(name: "q", value: clauses.joined(separator: " ")), URLQueryItem(name: "pageSize", value: "30")]
+        components.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "pageSize", value: "30")]
         var request = URLRequest(url: components.url!)
         let key = Keychain.get("pokemonAPI")
         if !key.isEmpty { request.setValue(key, forHTTPHeaderField: "X-Api-Key") }

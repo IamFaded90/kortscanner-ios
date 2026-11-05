@@ -8,7 +8,7 @@ settings:
     SWIFT_VERSION: "5.0"
     IPHONEOS_DEPLOYMENT_TARGET: "18.1"
     TARGETED_DEVICE_FAMILY: "1"
-    MARKETING_VERSION: "1.1.0"
+    MARKETING_VERSION: "1.2.0"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGNING_ALLOWED: NO
 targets:
@@ -28,6 +28,8 @@ targets:
       path: Generated/Info.plist
       properties:
         CFBundleDisplayName: Kortscanner
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSPhotoLibraryUsageDescription: Appen gemmer dine scanninger i dit eget album Kortscanner.
         NSPhotoLibraryAddUsageDescription: Appen gemmer dine kortbilleder i Fotos.
         NSCameraUsageDescription: Kameraet bruges til at scanne forsiden og bagsiden af dine kort.
@@ -53,6 +55,8 @@ targets:
       path: Generated/Widget-Info.plist
       properties:
         CFBundleDisplayName: Kortscanner
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
   KortscannerTests:

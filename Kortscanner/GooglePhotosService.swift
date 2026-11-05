@@ -20,7 +20,7 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
         "https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata"
     ]
     private var authSession: ASWebAuthenticationSession?
-    var configured: Bool { !Keychain.get("googleClientID").isEmpty }
+    var configured: Bool { clientID.range(of: "^[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com$", options: .regularExpression) != nil }
     private var clientID: String { Keychain.get("googleClientID") }
     private var scheme: String { clientID.split(separator: ".").reversed().joined(separator: ".") }
 
@@ -47,6 +47,7 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
         guard clientID.range(of: "^[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com$", options: .regularExpression) != nil else {
             throw APIError.message("Indtast dit iOS OAuth-klient-id i Indstillinger først.")
         }
+        guard authSession == nil else { throw APIError.message("Et Google-login er allerede åbent.") }
         let verifier = try randomToken()
         let state = try randomToken()
         let challenge = Self.base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
@@ -78,6 +79,10 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
         }
         let query = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems ?? []
         func value(_ key: String) -> String? { query.first(where: { $0.name == key })?.value }
+        if let code = value("error"), GoogleDiagnostics.safeCodes.contains(code) {
+            DebugLog.shared.error("Google OAuth: \(code)")
+            throw APIError.message(GoogleDiagnostics.message(status: 400, code: code))
+        }
         guard callback.scheme == scheme, value("state") == state,
               let code = value("code"), value("error") == nil else { throw APIError.message("Login blev afbrudt eller kunne ikke kontrolleres.") }
         let result = try await tokenRequest(["client_id": clientID, "code": code,
@@ -128,6 +133,25 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
         albumID = ""
         albumURL = nil
     }
+    private func googleData(_ original: URLRequest) async throws -> Data {
+        var request = original
+        request.timeoutInterval = 25
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let response = response as? HTTPURLResponse else { throw APIError.message("Google svarede ikke. Tjek forbindelsen.") }
+        guard (200..<300).contains(response.statusCode) else {
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let error = object?["error"] as? [String: Any]
+            var candidates = [object?["error"] as? String, error?["status"] as? String].compactMap { $0 }
+            let details = error?["details"] as? [[String: Any]] ?? []
+            let errors = error?["errors"] as? [[String: Any]] ?? []
+            candidates += (details + errors).compactMap { $0["reason"] as? String }
+            let code = candidates.first(where: { GoogleDiagnostics.safeCodes.contains($0) }) ?? "ukendt"
+            DebugLog.shared.error("Google HTTP \(response.statusCode) · \(code)")
+            if response.statusCode == 401 { throw APIError.http(401) }
+            throw APIError.message(GoogleDiagnostics.message(status: response.statusCode, code: code))
+        }
+        return data
+    }
     private func tokenRequest(_ values: [String: String]) async throws -> [String: Any] {
         var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
         request.httpMethod = "POST"
@@ -135,7 +159,7 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
         var form = URLComponents()
         form.queryItems = values.map { URLQueryItem(name: $0.key, value: $0.value) }
         request.httpBody = form.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B").data(using: .utf8)
-        let data = try await HTTP.data(request)
+        let data = try await googleData(request)
         guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw APIError.message("Google-login kunne ikke fornyes.") }
         return result
     }
@@ -159,7 +183,7 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
             guard currentGeneration == generation else { throw CancellationError() }
             request.setValue("Bearer \(access)", forHTTPHeaderField: "Authorization")
             do {
-                let data = try await HTTP.data(request)
+                let data = try await googleData(request)
                 guard currentGeneration == generation else { throw CancellationError() }
                 return data
             } catch APIError.http(401) where attempt == 0 {

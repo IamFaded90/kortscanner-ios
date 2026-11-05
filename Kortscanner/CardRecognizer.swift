@@ -32,7 +32,7 @@ struct RecognizedCard {
     var setCode: String
     @Guide(description: "Printed rarity if readable, otherwise empty string.")
     var rarity: String
-    @Guide(description: "PSA, BGS, CGC, ARS or empty string. Only if clearly printed on a grading label.")
+    @Guide(description: "PSA, BGS, CGC, ARS, ACE or empty string. Only if clearly printed on a grading label.")
     var gradingCompany: String
     @Guide(description: "Numeric grading score from the label, not HP. Empty string if absent.")
     var grade: String
@@ -65,15 +65,15 @@ enum CardRecognizer {
                   let range = Range(match.range(at: group), in: joined) else { return "" }
             return String(joined[range])
         }
-        info.gradingCompany = firstMatch("\\b(PSA|BGS|CGC|ARS)\\b", group: 1).uppercased()
+        info.gradingCompany = firstMatch("\\b(PSA|BGS|CGC|ARS|ACE)\\b", group: 1).uppercased()
         if !info.gradingCompany.isEmpty {
-            info.grade = firstMatch("(?:GEM\\s*MINT|PRISTINE|MINT|GRADE|PSA|BGS|CGC|ARS)\\s*[:#-]?\\s*(10|[1-9](?:\\.5)?)\\b", group: 1)
+            info.grade = firstMatch("(?:GEM\\s*MINT|PRISTINE|MINT|GRADE|PSA|BGS|CGC|ARS|ACE)\\s*[:#-]?\\s*(10|[1-9](?:\\.5)?)\\b", group: 1)
             info.certNumber = firstMatch("(?:CERT(?:IFICATION)?(?:\\s*(?:NO|NUMBER))?)[\\s:#.-]*(\\d{6,12})", group: 1)
         }
         info.setCode = firstMatch("\\b(?:SV|SWSH|SM|XY|BW)\\d{1,3}[A-Z]?\\b")
         let skip = ["hp", "ability", "item", "supporter", "stadium", "pokémon tool", "pokemon tool",
                     "basic", "stage 1", "stage 2", "vstar", "v-union", "tag team", "rule",
-                    "weakness", "resistance", "retreat", "evolves from", "trainer", "energy", "psa", "bgs", "cgc", "ars", "gem mint", "mint", "pristine", "cert"]
+                    "weakness", "resistance", "retreat", "evolves from", "trainer", "energy", "psa", "bgs", "cgc", "ars", "ace", "gem mint", "mint", "pristine", "cert"]
         for raw in lines {
             let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             let lower = line.lowercased()
@@ -139,7 +139,7 @@ enum CardRecognizer {
     @MainActor
     static func recognize(_ data: Data) async -> CardInfo {
         do {
-            let lines = try await ocr(data)
+            let lines = try await ocr(await upright(data))
             DebugLog.shared.info("OCR afsluttet: \(lines.count) tekstlinjer")
             var result = fallbackParse(lines)
             guard !lines.isEmpty else { return result }
@@ -188,7 +188,7 @@ enum CardRecognizer {
                     switch field {
                     case "setCode": result.setCode = value
                     case "rarity": result.rarity = value
-                    case "gradingCompany": if ["PSA","BGS","CGC","ARS"].contains(value.uppercased()) { result.gradingCompany = value.uppercased() }
+                    case "gradingCompany": if ["PSA","BGS","CGC","ARS","ACE"].contains(value.uppercased()) { result.gradingCompany = value.uppercased() }
                     case "grade": result.grade = value
                     default: result.certNumber = value
                     }

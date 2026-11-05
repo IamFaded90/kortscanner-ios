@@ -102,7 +102,6 @@ struct ScanView: View {
         guard !pages.isEmpty else { return }
         busy = true
         images = pages
-        images[0] = await CardRecognizer.upright(pages[0])
         info = await CardRecognizer.recognize(images[0])
         if info.language == "Japanese" { info.language = "JP" }
         if info.language == "English" { info.language = "EN" }
@@ -124,7 +123,9 @@ struct ScanView: View {
 }
 
 struct CardReviewView: View {
-    let images: [Data]
+    @State private var images: [Data]
+    @State private var photoSide = 0
+    @State private var rotationHistory: [[Data]] = []
     let saved: () -> Void
     let existing: CardItem?
     @Environment(\.modelContext) private var context
@@ -142,7 +143,7 @@ struct CardReviewView: View {
     @State private var busy = false
     @State private var message = ""
     init(images: [Data], initial: CardInfo, existing: CardItem? = nil, saved: @escaping () -> Void) {
-        self.images = images
+        _images = State(initialValue: images)
         self.saved = saved
         self.existing = existing
         _info = State(initialValue: initial)
@@ -159,8 +160,24 @@ struct CardReviewView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 22) {
-                    if let data = images.first, let image = UIImage(data: data) {
+                    if images.indices.contains(photoSide), let image = UIImage(data: images[photoSide]) {
                         Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 280).clipShape(RoundedRectangle(cornerRadius: 20))
+                    }
+                    if !images.isEmpty {
+                        Picker("Billedside", selection: $photoSide) {
+                            ForEach(images.indices, id: \.self) { i in Text(i == 0 ? "Forside" : i == 1 ? "Bagside" : "Nummer").tag(i) }
+                        }.pickerStyle(.segmented)
+                        HStack {
+                            Button("Drej 90°", systemImage: "rotate.right") {
+                                if let rotated = ImageRotation.clockwise(images[photoSide]) {
+                                    rotationHistory.append(images)
+                                    images[photoSide] = rotated
+                                }
+                            }.frame(maxWidth: .infinity, minHeight: 56)
+                            Button("Fortryd rotation") {
+                                if let previous = rotationHistory.popLast() { images = previous }
+                            }.frame(maxWidth: .infinity, minHeight: 56).disabled(rotationHistory.isEmpty)
+                        }
                     }
                     VStack(alignment: .leading, spacing: 12) {
                         Text(info.name.isEmpty ? "Navn mangler · tryk Ret" : info.name).font(.title.bold())
@@ -211,7 +228,7 @@ struct CardReviewView: View {
                 Text("Kortdata").font(.headline)
                 TextField("Navn", text: $info.name).textFieldStyle(.roundedBorder).frame(minHeight: 56)
                 TextField("Kortnummer", text: $info.number).textFieldStyle(.roundedBorder).frame(minHeight: 56)
-                TextField("Sæt", text: $setName).textFieldStyle(.roundedBorder).frame(minHeight: 56)
+                TextField("Sætnavn, fx Scarlet & Violet", text: $setName).textFieldStyle(.roundedBorder).frame(minHeight: 56)
                 DisclosureGroup("Sprog, sæt-kode og sjældenhed") {
                     TextField("Sprog, fx EN eller JP", text: $info.language).textFieldStyle(.roundedBorder).frame(minHeight: 56)
                     TextField("Sæt-kode", text: $info.setCode).textFieldStyle(.roundedBorder).frame(minHeight: 56)
@@ -238,7 +255,7 @@ struct CardReviewView: View {
                 Text("Cardmarket-trend er ikke en standsspecifik NM-pris. Vælg korrekt variant.").font(.footnote).foregroundStyle(.secondary)
             }.padding(18).glassPanel()
             DisclosureGroup("Gradering fra slab-etiket") {
-                TextField("Firma: PSA, BGS, CGC eller ARS", text: $info.gradingCompany).textFieldStyle(.roundedBorder).frame(minHeight: 56)
+                TextField("Firma: PSA, BGS, CGC, ARS eller ACE", text: $info.gradingCompany).textFieldStyle(.roundedBorder).frame(minHeight: 56)
                 TextField("Trykt karakter", text: $info.grade).textFieldStyle(.roundedBorder).frame(minHeight: 56)
                 TextField("Certifikatnummer", text: $info.certNumber).textFieldStyle(.roundedBorder).frame(minHeight: 56)
                 Text("Vi læser kun etiketten. Ingen AI-vurdering af kortets stand.").font(.footnote)
@@ -259,8 +276,9 @@ struct CardReviewView: View {
         confidence = "Lav"
         confirmed = false
         do {
-            let result = try await CardAPI.search(info)
+            let result = try await CardAPI.search(info, setName: setName)
             matches = result.cards
+            if matches.isEmpty { editing = true }
             if let first = matches.first {
                 let score = CardAPI.score(first, info: info)
                 confidence = score >= 8 && result.total == 1 ? "Høj" : score >= 5 ? "Middel" : "Lav"
@@ -269,6 +287,7 @@ struct CardReviewView: View {
             DebugLog.shared.info("Kortopslag afsluttet: \(matches.count) viste match")
         } catch {
             matches = []
+            editing = true
             message = error.localizedDescription
             DebugLog.shared.error("Kortopslag fejlede: \(String(describing: type(of: error)))")
         }
@@ -303,6 +322,8 @@ struct CardReviewView: View {
         guard text.isEmpty || (amount != nil && amount!.isFinite && amount! >= 0) else { message = "Skriv en gyldig pris i DKK."; return }
         let before = existing.map(BackupCard.init)
         let card = existing ?? CardItem(front: front, back: images.count > 1 ? images[1] : nil, info: info)
+        card.front = front
+        card.back = images.count > 1 ? images[1] : nil
         card.name = info.name; card.number = info.number; card.language = info.language
         card.setCode = info.setCode; card.rarity = info.rarity
         card.gradingCompany = info.gradingCompany; card.grade = info.grade; card.certNumber = info.certNumber

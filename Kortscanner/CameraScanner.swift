@@ -179,6 +179,10 @@ struct CameraPreview: UIViewRepresentable {
     final class PreviewView: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var preview: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            if let connection = preview.connection, connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
+        }
     }
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
@@ -221,8 +225,9 @@ struct CaptureView: View {
                         .stroke(frameColor, lineWidth: 3)
                         .shadow(color: frameColor.opacity(0.35), radius: 14)
                         .aspectRatio(0.716, contentMode: .fit)
-                        .frame(maxHeight: geometry.size.height * 0.48)
+                        .frame(maxHeight: geometry.size.height * 0.38)
                         .animation(reducedMotion ? nil : .spring(response: 0.35), value: camera.detectionState)
+                    CameraLevelView()
                     Text(camera.message).font(.subheadline.bold()).padding(10).background(.ultraThinMaterial, in: Capsule())
                     Spacer(minLength: 8)
                     if camera.denied {

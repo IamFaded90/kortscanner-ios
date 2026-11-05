@@ -114,3 +114,15 @@ Buildet forsøger også at tage simulatorbilleder af Samling og Indstillinger i 
 - Glaspaneler bruger materialebaggrunde på iOS 18 og Liquid Glass på iOS 26. Siri, Handlingsknappen, Kontrolcenter og Live Activity bevares. Der er ingen hjemmeskærmswidget.
 - Backup, billeder, priser, salg, Google Fotos og offlinefunktioner bevares. Google kræver fortsat dit eget klient-id og login.
 - Test på telefonen: scan forside/bagside, gem og genåbn et kort, prøv samlingsspørgsmål og et salgsudkast, og start batch for at se Live Activity. Prøv også Scan et kort fra Genveje/Kontrolcenter.
+
+## Billedværktøjer og scanningstest
+- Fotos gemmes i kameraets retning. OCR kan undersøge en anden retning uden at ændre originalen.
+- Efter scanning: vælg Forside/Bagside/Nummer og brug Drej 90°. Fortryd rotation er lokal indtil Gem. På gemte kort: Drej billedet 90°; brug appens Fortryd for at vende ændringen tilbage.
+- Vaterpasset viser telefonens vinkel fra vandret. Læg kortet fladt; en grøn indikator betyder højst 3°. Det måler telefonen, ikke kortets hældning, og ændrer ikke automatisk billedet.
+- Mål centrering findes i kortets detaljer. Placér gul ramme på kortets yderkanter og blå ramme på trykkets indre kanter. Vælg forside eller bagside og justér de fire linjer med skyderne. Startlinjerne er ikke en analyse. Forholdene vises først efter justering.
+- Centrering er en manuel geometrisk måling i billedet, ingen AI-stand eller karakter. Skæve fotos, blank plast og full-art uden tydelig indre kant kan ikke give en sikker måling. Kopiér resultatet, hvis du vil gemme det; appen gemmer ikke linjerne.
+- ACE Grading er tilføjet til OCR af firma, trykt karakter og certifikat. Ulæselige etiketter kan stadig rettes manuelt. ACE er ikke automatisk låst til Beholder; beskyttelsen gælder fortsat Moltres PSA og Snorlax PSA.
+- Hvis genkendelse fejler, åbnes rettelser automatisk. Skriv sætnavn og kortnummer, fjern et forkert OCR-navn, og tryk Find match igen. Sætnavnet bruges nu i selve katalogsøgningen. Japanske/koreanske kort skal stadig gemmes manuelt i dette engelske katalog.
+- Google Fotos kræver et iOS OAuth-klient-id. En manglende konfiguration er ikke en uploadfejl. Åbn Konti → Hjælp: forbind Google Fotos og følg guiden; brug bundle-id'et fra den installerede app. Ingen klient-id'er skal ind i GitHub.
+- En rotation af et allerede uploadet foto ændrer kun den lokale kopi; et tidligere foto i Google Fotos ændres ikke.
+- Test på telefonen: scan et kort, kontrollér begge sider, drej og fortryd, gem og genåbn. Kontroller vaterpasset over et fladt bord. Mål et kort med kendte kantbredder og prøv begge sider. Scan en ACE-etiket, og prøv sætnavn + nummer ved manglende match.

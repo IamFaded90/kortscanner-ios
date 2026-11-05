@@ -97,6 +97,7 @@ struct SettingsView: View {
     private var accounts: some View {
         Form {
             Section("Google · kun på denne telefon") {
+                NavigationLink("Hjælp: forbind Google Fotos") { GoogleSetupView() }.frame(minHeight: 56)
                 SecureField("Dit iOS OAuth-klient-id", text: $googleClient).textInputAutocapitalization(.never).autocorrectionDisabled().frame(minHeight: 56)
                 Button("Gem Google-konfiguration") {
                     do {
@@ -110,8 +111,8 @@ struct SettingsView: View {
                 } else {
                     Button("Log ind med Google") { Task {
                         do { try await google.signIn(); await queue.process(force: true) }
-                        catch { message = error.localizedDescription }
-                    }}.disabled(!google.configured).frame(minHeight: 56)
+                        catch { message = error.localizedDescription; DebugLog.shared.error("Google-login mislykkedes: \(error.localizedDescription)") }
+                    }}.frame(minHeight: 56)
                 }
                 Text(google.signedIn ? "Logget ind med din egen Google-konto." : "Følg Google-guiden i README. Ingen loginoplysninger skal ind i GitHub.").font(.footnote)
             }
@@ -250,7 +251,7 @@ struct SettingsView: View {
         } catch { tests["Pokémon API"] = false; explanations["Pokémon API"] = "Tjek net og API-nøgle. Kataloget er under udfasning."; DebugLog.shared.error("Diagnose: Pokémon API fejlede") }
         if google.signedIn {
             do { try await google.test(); tests["Google Fotos"] = true; explanations["Google Fotos"] = "Login og adgang til appens album virker." }
-            catch { tests["Google Fotos"] = false; explanations["Google Fotos"] = "Log ind igen, og kontrollér begge Fotos-tilladelser." }
+            catch { tests["Google Fotos"] = false; explanations["Google Fotos"] = error.localizedDescription }
         } else { tests["Google Fotos"] = false; explanations["Google Fotos"] = "Indtast dit klient-id i Konti, og log ind." }
         testing = false
     }
