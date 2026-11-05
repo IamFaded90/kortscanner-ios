@@ -33,18 +33,23 @@ struct GoogleSetupView: View {
         List {
             Section("1 · Opret projekt og API") {
                 Text("Opret et projekt i Google Cloud. Find Google Photos Library API i API-biblioteket, og aktivér den.")
-                Link("Åbn Google Cloud", destination: URL(string: "https://console.cloud.google.com/")!).frame(minHeight: 56)
+                Link("Åbn Photos Library API i Google Cloud", destination: URL(string: "https://console.cloud.google.com/apis/library/photoslibrary.googleapis.com")!).frame(minHeight: 56)
             }
             Section("2 · Tillad din konto") {
-                Text("Under Google Auth Platform: konfigurér samtykke, vælg External og Testing, og tilføj din egen Google-konto som testbruger. Tilføj scopes photoslibrary.appendonly og photoslibrary.readonly.appcreateddata under Data Access.")
+                Text("Under Google Auth Platform: konfigurér samtykke, vælg External og Testing, og tilføj din egen Google-konto som testbruger. Tilføj begge Fotos-tilladelser under Data Access.")
+                Link("Åbn Google Auth Platform", destination: URL(string: "https://console.cloud.google.com/auth/overview")!)
+                Button("Kopiér begge Fotos-tilladelser") {
+                    UIPasteboard.general.string = "https://www.googleapis.com/auth/photoslibrary.appendonly\nhttps://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata"
+                }
             }
             Section("3 · Opret iOS-klient") {
                 Text("Opret en OAuth-klient af typen iOS. Brug bundle-id'et nedenfor fra denne installerede app. App Store-id og Team-id kan være tomme. Aktivér ikke App Check til denne Sideloadly-test.")
+                Link("Åbn OAuth-klienter", destination: URL(string: "https://console.cloud.google.com/auth/clients")!)
                 Text(bundleID).font(.footnote.monospaced()).textSelection(.enabled)
                 Button("Kopiér appens bundle-id") { UIPasteboard.general.string = bundleID }.frame(minHeight: 56)
             }
             Section("4 · Forbind Kortscanner") {
-                Text("Kopiér hele klient-id'et fra Google Cloud. Gå tilbage til Konti, indsæt det, tryk Gem Google-konfiguration og derefter Log ind med Google. Godkend begge Fotos-tilladelser.")
+                Text("Kopiér hele klient-id'et fra Google Cloud. Gå tilbage til Forbindelser, tryk Indsæt, og vælg Gem og log ind med Google. Godkend begge Fotos-tilladelser.")
                 Text("Klient-id og login gemmes kun i Keychain på telefonen. Del aldrig tokens eller adgangskoder i fejlloggen. I testtilstand kan Google kræve nyt login efter 7 dage.").font(.footnote)
             }
             Section("Hvis Google viser en fejl") {

@@ -20,7 +20,10 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
         "https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata"
     ]
     private var authSession: ASWebAuthenticationSession?
-    var configured: Bool { clientID.range(of: "^[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com$", options: .regularExpression) != nil }
+    var configured: Bool { Self.validClientID(clientID) }
+    static func validClientID(_ value: String) -> Bool {
+        value.range(of: "^[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com$", options: .regularExpression) != nil
+    }
     private var clientID: String { Keychain.get("googleClientID") }
     private var scheme: String { clientID.split(separator: ".").reversed().joined(separator: ".") }
 
@@ -44,7 +47,7 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
         data.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
     }
     func signIn() async throws {
-        guard clientID.range(of: "^[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com$", options: .regularExpression) != nil else {
+        guard configured else {
             throw APIError.message("Indtast dit iOS OAuth-klient-id i Indstillinger først.")
         }
         guard authSession == nil else { throw APIError.message("Et Google-login er allerede åbent.") }

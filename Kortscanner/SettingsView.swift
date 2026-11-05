@@ -23,6 +23,8 @@ struct SettingsView: View {
     @State private var pokemonKey = Keychain.get("pokemonAPI")
     @State private var justKey = Keychain.get("justTCG")
     @State private var trackerKey = Keychain.get("pokemonPriceTracker")
+    @State private var connectingGoogle = false
+    @State private var savedPriceKeys: Set<String> = []
     @State private var export: URL?
     @State private var message = ""
     @State private var showClear = false
@@ -39,7 +41,7 @@ struct SettingsView: View {
         NavigationStack {
             List {
                 Section("Din samling") {
-                    NavigationLink { accounts } label: { settingLabel("Konti", "person.crop.circle") }
+                    NavigationLink { accounts } label: { settingLabel("Google Fotos og priskilder", "person.crop.circle") }
                     NavigationLink { albums } label: { settingLabel("Album", "photo.on.rectangle") }
                     NavigationLink { backups } label: { settingLabel("Backup", "externaldrive") }
                 }
@@ -97,44 +99,97 @@ struct SettingsView: View {
     }
     private var accounts: some View {
         Form {
-            Section("Google · kun på denne telefon") {
-                NavigationLink("Hjælp: forbind Google Fotos") { GoogleSetupView() }.frame(minHeight: 56)
-                SecureField("Dit iOS OAuth-klient-id", text: $googleClient).textInputAutocapitalization(.never).autocorrectionDisabled().frame(minHeight: 56)
-                Button("Gem Google-konfiguration") {
-                    do {
-                        google.signOut()
-                        try Keychain.set(googleClient.trimmingCharacters(in: .whitespacesAndNewlines), key: "googleClientID")
-                        message = "Klient-id er gemt i Keychain på telefonen."
-                    } catch { message = "Konfigurationen kunne ikke gemmes." }
-                }.frame(minHeight: 56)
+            Section {
+                Label(google.signedIn ? "Forbundet" : google.configured ? "Klar til login" : "Mangler opsætning",
+                      systemImage: google.signedIn ? "checkmark.circle.fill" : "person.crop.circle")
                 if google.signedIn {
-                    Button("Log ud af Google") { google.signOut() }.disabled(queue.running).frame(minHeight: 56)
+                    Button("Log ud af Google") { google.signOut() }
+                        .disabled(queue.running || connectingGoogle)
                 } else {
-                    Button("Log ind med Google") { Task {
-                        do { try await google.signIn(); await queue.process(force: true) }
-                        catch { message = error.localizedDescription; DebugLog.shared.error("Google-login mislykkedes: \(error.localizedDescription)") }
-                    }}.frame(minHeight: 56)
+                    if !google.configured {
+                        NavigationLink("Kom i gang med Google Fotos") { GoogleSetupView() }
+                    }
+                    SecureField("Google-klient-id til iOS", text: $googleClient)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    PasteButton(payloadType: String.self) { values in
+                        if let value = values.first { googleClient = value }
+                    }.accessibilityLabel("Indsæt Google-klient-id")
+                    Button(connectingGoogle ? "Forbinder …" : "Gem og log ind med Google") {
+                        Task { await connectGoogle() }
+                    }.disabled(connectingGoogle || queue.running || googleClient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                Text(google.signedIn ? "Logget ind med din egen Google-konto." : "Følg Google-guiden i README. Ingen loginoplysninger skal ind i GitHub.").font(.footnote)
+            } header: {
+                Text("Google Fotos")
+            } footer: {
+                Text("Første gang skal du oprette et iOS-klient-id i Google Cloud. Guiden viser trinnene.")
             }
-            Section("Priskilder · valgfrit") {
-                SecureField("Pokémon TCG API-nøgle", text: $pokemonKey).textInputAutocapitalization(.never).autocorrectionDisabled().frame(minHeight: 56)
-                SecureField("JustTCG-nøgle", text: $justKey).textInputAutocapitalization(.never).autocorrectionDisabled().frame(minHeight: 56)
-                SecureField("PokemonPriceTracker-nøgle", text: $trackerKey).textInputAutocapitalization(.never).autocorrectionDisabled().frame(minHeight: 56)
-                Button("Gem API-nøgler i Keychain") {
-                    do {
-                        try Keychain.set(pokemonKey.trimmingCharacters(in: .whitespacesAndNewlines), key: "pokemonAPI")
-                        try Keychain.set(justKey.trimmingCharacters(in: .whitespacesAndNewlines), key: "justTCG")
-                        try Keychain.set(trackerKey.trimmingCharacters(in: .whitespacesAndNewlines), key: "pokemonPriceTracker")
-                        Task { await PriceProviderRequests.shared.reset() }
-                        message = "Nøglerne er gemt sikkert på telefonen."
-                    } catch { message = "Nøglerne kunne ikke gemmes." }
-                }.frame(minHeight: 56)
-                Text("JustTCG og PokemonPriceTracker er valgfrie. Manglende nøgle, fejl eller forbrugsgrænse springes over. Alle viste priser omregnes til DKK.").font(.footnote)
-                Text("Pokémon TCG API er under udfasning. Scanning og samling virker også uden net og API-nøgler.").font(.footnote)
+            Section("Gratis priskilder") {
+                Text("Vælg én tjeneste for at komme i gang. Opret en gratis konto, kopiér nøglen, og indsæt den her.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                priceKey("PokemonPriceTracker", storage: "pokemonPriceTracker", draft: $trackerKey,
+                         signup: URL(string: "https://www.pokemonpricetracker.com/api-signup"))
+                priceKey("JustTCG", storage: "justTCG", draft: $justKey,
+                         signup: URL(string: "https://www.justtcg.com/pricing"))
+                priceKey("Pokémon TCG API", storage: "pokemonAPI", draft: $pokemonKey)
             }
             feedback
-        }.navigationTitle("Konti")
+        }
+        .navigationTitle("Forbindelser")
+        .onAppear {
+            savedPriceKeys = Set(["pokemonPriceTracker", "justTCG", "pokemonAPI"].filter { !Keychain.get($0).isEmpty })
+        }
+    }
+
+    private func priceKey(_ name: String, storage: String, draft: Binding<String>, signup: URL? = nil) -> some View {
+        DisclosureGroup {
+            if let signup { Link("Hent gratis nøgle", destination: signup) }
+            SecureField("\(name)-nøgle", text: draft)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+            PasteButton(payloadType: String.self) { values in
+                if let value = values.first { draft.wrappedValue = value }
+            }.accessibilityLabel("Indsæt \(name)-nøgle")
+            Button("Gem nøgle") {
+                let value = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                do {
+                    try Keychain.set(value, key: storage)
+                    if value.isEmpty { savedPriceKeys.remove(storage) }
+                    else { savedPriceKeys.insert(storage) }
+                    Task { await PriceProviderRequests.shared.reset() }
+                    message = value.isEmpty ? "\(name)-nøglen er fjernet." : "\(name)-nøglen er gemt. Prøv Hent alle priskilder på et kort."
+                } catch { message = "\(name)-nøglen kunne ikke gemmes." }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(name)
+                Text(savedPriceKeys.contains(storage) ? "Nøgle gemt" : "Valgfri · ingen nøgle gemt")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @MainActor
+    private func connectGoogle() async {
+        guard !connectingGoogle, !google.signedIn, !queue.running else { return }
+        let value = googleClient.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard GooglePhotosService.validClientID(value) else {
+            message = "Indsæt hele iOS-klient-id’et fra Google Cloud. Det slutter på .apps.googleusercontent.com."
+            return
+        }
+        connectingGoogle = true
+        defer { connectingGoogle = false }
+        message = ""
+        do {
+            if value != Keychain.get("googleClientID") {
+                try Keychain.set(value, key: "googleClientID")
+                google.signOut()
+            }
+            try await google.signIn()
+            message = "Google Fotos er forbundet."
+            await queue.process(force: true)
+        } catch {
+            message = error.localizedDescription
+            DebugLog.shared.error("Google-login mislykkedes: \(error.localizedDescription)")
+        }
     }
     private var albums: some View {
         Form {

@@ -146,3 +146,6 @@ Test på telefonen:
 3. Fjern begge ekstra nøgler. Pokémon TCG API skal stadig kunne bruges.
 4. Vælg en pris, genåbn kortet og kontrollér DKK, kilde, datoer og historik.
 API-kald med gyldige private nøgler skal testes på din telefon. Automatiske tests bruger konstruerede svar uden nøgler og kontrollerer parsing, match, stand, valuta, fallback og 429-pause.
+
+## Forbindelser i version 1.4
+Åbn Indstillinger → Google Fotos og priskilder. Følg Google-guiden, indsæt iOS-klient-id’et, og vælg Gem og log ind med Google. For priser kan du åbne JustTCG eller PokemonPriceTracker, hente en gratis nøgle hos tjenesten og gemme den i samme afsnit. Statusen Nøgle gemt viser, at nøglen er gemt på telefonen. Prøv derefter Hent alle priskilder på et kort.
