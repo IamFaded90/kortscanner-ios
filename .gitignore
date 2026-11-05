@@ -1,0 +1,11 @@
+build/
+DerivedData/
+*.ipa
+*.p12
+*.mobileprovision
+*.key
+*.log
+.env*
+Backups/
+*samling*.json
+*backup*.json

@@ -1,0 +1,78 @@
+name: Byg Kortscanner IPA
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: kortscanner-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26'
+      - name: Klargør logmappe
+        run: mkdir -p build/logs
+      - name: Kontrollér repo for private data
+        run: python3 scripts/privacy-check.py
+      - name: Installer XcodeGen
+        run: brew install xcodegen
+      - name: Generér projekt
+        run: |
+          set -o pipefail
+          xcodegen generate 2>&1 | tee build/logs/xcodegen.log
+          xcodebuild -version | tee build/logs/xcode-version.log
+          xcodebuild -showBuildSettings -scheme Kortscanner 2>&1 | tee build/logs/settings.log
+      - name: Test genkendelse
+        run: |
+          set -o pipefail
+          xcrun simctl list devices available -j > build/devices.json
+          DEVICE=$(python3 -c 'import json; d=json.load(open("build/devices.json")); print(next(x["udid"] for v in d["devices"].values() for x in v if x["name"].startswith("iPhone")))')
+          xcodebuild test -scheme Kortscanner -destination "platform=iOS Simulator,id=$DEVICE" -resultBundlePath build/Tests.xcresult CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/logs/tests.log
+      - name: Byg til iPhone
+        run: |
+          set -o pipefail
+          xcodebuild -scheme Kortscanner -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData -resultBundlePath build/Build.xcresult CURRENT_PROJECT_VERSION=${{ github.run_number }} CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build/logs/build.log
+      - name: Pak og kontrollér IPA
+        run: |
+          set -euo pipefail
+          mkdir -p build/ipa/Payload
+          cp -R build/DerivedData/Build/Products/Release-iphoneos/Kortscanner.app build/ipa/Payload/
+          plutil -p build/ipa/Payload/Kortscanner.app/Info.plist | tee build/logs/Info-plist.log
+          /usr/libexec/PlistBuddy -c 'Print NSCameraUsageDescription' build/ipa/Payload/Kortscanner.app/Info.plist
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' build/ipa/Payload/Kortscanner.app/Info.plist)" = "dk.iamfaded90.kortscanner"
+          test "$(/usr/libexec/PlistBuddy -c 'Print MinimumOSVersion' build/ipa/Payload/Kortscanner.app/Info.plist)" = "26.0"
+          cd build/ipa
+          zip -qry ../Kortscanner-unsigned.ipa Payload
+      - name: Gem IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kortscanner-IPA
+          path: build/Kortscanner-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 1
+      - name: Pak Xcode-projekt og kildekode
+        run: zip -qry build/Kortscanner-kildekode.zip Kortscanner Tests scripts project.yml Kortscanner.xcodeproj .github README.md -x '*/.DS_Store'
+      - name: Gem projekt
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kortscanner-projekt
+          path: build/Kortscanner-kildekode.zip
+          retention-days: 1
+      - name: Gem fejllogs og testresultater
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kortscanner-fejllogs
+          path: |
+            build/logs
+            build/*.xcresult
+          retention-days: 1

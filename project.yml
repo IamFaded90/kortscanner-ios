@@ -1,0 +1,53 @@
+name: Kortscanner
+options:
+  bundleIdPrefix: dk.iamfaded90
+  deploymentTarget:
+    iOS: "26.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGNING_ALLOWED: NO
+targets:
+  Kortscanner:
+    type: application
+    platform: iOS
+    sources: [Kortscanner]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dk.iamfaded90.kortscanner
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_CFBundleDisplayName: Kortscanner
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: Kortscanner
+        NSPhotoLibraryUsageDescription: Appen gemmer dine scanninger i dit eget album Kortscanner.
+        NSPhotoLibraryAddUsageDescription: Appen gemmer dine kortbilleder i Fotos.
+        NSCameraUsageDescription: Kameraet bruges til at scanne forsiden og bagsiden af dine kort.
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        LSApplicationCategoryType: public.app-category.utilities
+        CFBundleURLTypes:
+          - CFBundleURLSchemes: ["kortscanner"]
+  KortscannerTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: Kortscanner
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: dk.iamfaded90.kortscanner.tests
+schemes:
+  Kortscanner:
+    build:
+      targets:
+        Kortscanner: all
+        KortscannerTests: [test]
+    test:
+      targets: [KortscannerTests]
